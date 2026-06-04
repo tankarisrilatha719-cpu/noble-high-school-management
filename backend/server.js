@@ -83,3 +83,12 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 // Nodemon restart trigger: 2
+
+const https = require('https');
+setInterval(() => {
+  https.get('https://noble-high-school-management.onrender.com/api', (res) => {
+    console.log('[KEEP-ALIVE] Ping: ' + res.statusCode);
+  }).on('error', (err) => {
+    console.log('[KEEP-ALIVE] Error: ' + err.message);
+  });
+}, 840000);
