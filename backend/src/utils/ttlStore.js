@@ -1,104 +1,31 @@
-/**
- * ttlStore.js  —  A simple, file-backed key-value store with TTL expiry.
- *
- * FIX #3: Replaces plain in-memory Maps for CAPTCHA and OTP storage.
- *
- * WHY: In-memory Maps are lost on every server restart, making OTP/CAPTCHA
- *      sessions invalid whenever nodemon reloads or the server crashes.
- *      This implementation persists data to a JSON file so sessions survive
- *      restarts and can be shared across simple multi-process setups.
- *
- * For production at scale, swap this for Redis (ioredis) — the API is
- * intentionally identical so you only need to change this one file.
- */
-
-const fs   = require('fs');
-const path = require('path');
-
-const STORE_FILE = path.resolve(__dirname, '../../ttl-store.json');
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function readStore() {
+const mongoose = require('mongoose');
+const ttlStoreSchema = new mongoose.Schema({
+  namespace: { type: String, required: true },
+  key: { type: String, required: true },
+  value: { type: String, required: true },
+  expiresAt: { type: Date, required: true }
+});
+ttlStoreSchema.index({ namespace: 1, key: 1 }, { unique: true });
+ttlStoreSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+const TtlStore = mongoose.models.TtlStore || mongoose.model('TtlStore', ttlStoreSchema);
+async function set(namespace, key, value, ttlMs) {
   try {
-    if (!fs.existsSync(STORE_FILE)) return {};
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8') || '{}');
-  } catch {
-    return {};
-  }
+    const expiresAt = new Date(Date.now() + ttlMs);
+    await TtlStore.findOneAndUpdate({ namespace, key }, { namespace, key, value, expiresAt }, { upsert: true, new: true });
+  } catch (err) { console.error('[ttlStore] set error:', err.message); }
 }
-
-function writeStore(data) {
+async function get(namespace, key) {
   try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) {
-    console.error('[ttlStore] Write error:', e.message);
-  }
+    const doc = await TtlStore.findOne({ namespace, key });
+    if (!doc) return null;
+    if (doc.expiresAt < new Date()) { await TtlStore.deleteOne({ namespace, key }); return null; }
+    return doc.value;
+  } catch (err) { console.error('[ttlStore] get error:', err.message); return null; }
 }
-
-// Remove all expired entries and return the cleaned store
-function purgeExpired(store) {
-  const now = Date.now();
-  let changed = false;
-  for (const key of Object.keys(store)) {
-    if (store[key].expires < now) {
-      delete store[key];
-      changed = true;
-    }
-  }
-  return { store, changed };
+async function del(namespace, key) {
+  try { await TtlStore.deleteOne({ namespace, key }); } catch (err) { console.error('[ttlStore] del error:', err.message); }
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * @param {string} namespace  - e.g. 'captcha' or 'otp'
- * @param {string} key
- * @param {any}    value
- * @param {number} ttlMs      - Time-to-live in milliseconds
- */
-function set(namespace, key, value, ttlMs) {
-  const store = readStore();
-  if (!store[namespace]) store[namespace] = {};
-  store[namespace][key] = { value, expires: Date.now() + ttlMs };
-  writeStore(store);
+async function purgeAll() {
+  try { await TtlStore.deleteMany({ expiresAt: { $lt: new Date() } }); } catch (err) { console.error('[ttlStore] purgeAll error:', err.message); }
 }
-
-/**
- * Returns the stored value, or null if missing / expired.
- */
-function get(namespace, key) {
-  const store = readStore();
-  const entry = store[namespace] && store[namespace][key];
-  if (!entry) return null;
-  if (entry.expires < Date.now()) {
-    del(namespace, key);          // lazy expiry
-    return null;
-  }
-  return entry.value;
-}
-
-/**
- * Deletes a key (e.g. after successful OTP verification).
- */
-function del(namespace, key) {
-  const store = readStore();
-  if (store[namespace]) {
-    delete store[namespace][key];
-    writeStore(store);
-  }
-}
-
-/**
- * Call once at startup to remove stale entries accumulated from previous runs.
- */
-function purgeAll() {
-  const store = readStore();
-  for (const ns of Object.keys(store)) {
-    const { store: cleaned, changed } = purgeExpired(store[ns] || {});
-    if (changed) store[ns] = cleaned;
-  }
-  writeStore(store);
-}
-
 module.exports = { set, get, del, purgeAll };
