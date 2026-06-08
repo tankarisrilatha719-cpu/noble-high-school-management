@@ -158,10 +158,17 @@ class MockDocument {
     if (this._schema && this._schema._preHooks && this._schema._preHooks['save']) {
       for (const hookFn of this._schema._preHooks['save']) {
         await new Promise((resolve, reject) => {
-          hookFn.call(this, (err) => {
+          let resolved = false;
+          const done = (err) => {
+            if (resolved) return;
+            resolved = true;
             if (err) reject(err);
             else resolve();
-          });
+          };
+          const res = hookFn.call(this, done);
+          if (res && typeof res.then === 'function') {
+            res.then(() => done()).catch(err => done(err));
+          }
         });
       }
     }
@@ -337,45 +344,7 @@ async function seedDefaultAdmin() {
   }
   // Seed default test student "NHS001"
   if (!dbData.students) dbData.students = [];
-  const studentExists = dbData.students.some(s => s.id === 'NHS001');
-  if (!studentExists) {
-    console.log('[DATABASE FALLBACK] Seeding default student NHS001 (Rahul Reddy)...');
-    
-    dbData.students.push({
-      _id: 'student_rahul_id',
-      id: 'NHS001',
-      loginId: 'student_rahul',
-      name: 'Rahul Reddy',
-      className: '10',
-      section: 'A',
-      rollNo: '12',
-      fatherName: 'Venkata Reddy',
-      phone: '+91 90599 92147',
-      emergencyPhone: '+91 90599 92147',
-      aadhaar: '123456789012',
-      totalFee: 45000,
-      academicYear: '2026-2027',
-      status: 'active',
-      createdAt: new Date().toISOString()
-    });
-    
-    // Also add to users table for student portal login access
-    const studentUserExists = dbData.users.some(u => u.loginId === 'student_rahul');
-    if (!studentUserExists) {
-      const studentSalt = await bcrypt.genSalt(10);
-      const studentPassHash = await bcrypt.hash('student12345', studentSalt);
-      dbData.users.push({
-        _id: 'student_user_rahul_id',
-        loginId: 'student_rahul',
-        password: studentPassHash,
-        role: 'student',
-        createdAt: new Date().toISOString()
-      });
-    }
-    
-    writeDbFile(dbData);
-    console.log('[DATABASE FALLBACK] Default student NHS001 seeded successfully.');
-  }
+  // Disabled default student seeding for clean installation.
 }
 const mockModels = new Map();
 mongoose.model = function(name, schema) {

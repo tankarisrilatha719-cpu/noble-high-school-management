@@ -45,6 +45,8 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
     apaar,
     address,
     academicYear,
+    dob,
+    joinDate,
     photo,
     totalFee
   } = req.body;
@@ -70,6 +72,8 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       apaar,
       address,
       academicYear,
+      dob,
+      joinDate,
       photo,
       totalFee
     });

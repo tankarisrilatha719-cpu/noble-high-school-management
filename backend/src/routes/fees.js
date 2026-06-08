@@ -71,4 +71,33 @@ router.get('/student/:studentId', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/fees/public-info/:studentId
+// @desc    Get public fee status for chatbot (no auth required)
+// @access  Public
+router.get('/public-info/:studentId', async (req, res) => {
+  try {
+    const student = await Student.findOne({ id: req.params.studentId });
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student ID not found' });
+    }
+    const fees = await Fee.find({ studentId: req.params.studentId }).sort({ date: -1 });
+    res.json({
+      success: true,
+      data: {
+        student: {
+          _id: student._id,
+          id: student.id,
+          name: student.name,
+          className: student.className,
+          section: student.section,
+          totalFee: student.totalFee
+        },
+        payments: fees
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

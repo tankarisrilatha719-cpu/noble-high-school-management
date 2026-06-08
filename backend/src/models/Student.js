@@ -58,6 +58,12 @@ const StudentSchema = new mongoose.Schema({
     type: String,
     default: '2026-2027'
   },
+  dob: {
+    type: String
+  },
+  joinDate: {
+    type: String
+  },
   photo: {
     type: String // Stores base64 data url or image asset URL
   },

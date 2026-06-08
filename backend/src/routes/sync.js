@@ -77,7 +77,7 @@ router.post('/set', async (req, res) => {
     fs.writeFileSync(DB_FILE_PATH, JSON.stringify(localDb, null, 2), 'utf8');
     
     // 2. If MongoDB is active, save to FallbackStore AND individual collection
-    if (true) {
+    if (!global.useMongooseMock) {
       // Save key-value to MongoDB FallbackStore
       await FallbackStore.findOneAndUpdate(
         { key },
@@ -117,6 +117,8 @@ router.post('/set', async (req, res) => {
               apaar: s.apaar,
               address: s.address,
               academicYear: s.academicYear,
+              dob: s.dob,
+              joinDate: s.joinDate,
               photo: s.photo,
               totalFee: s.totalFee || 0,
               status: s.status || 'active'
@@ -149,6 +151,8 @@ router.post('/set', async (req, res) => {
               apaar: s.apaar,
               address: s.address,
               academicYear: s.academicYear,
+              dob: s.dob,
+              joinDate: s.joinDate,
               photo: s.photo,
               totalFee: s.totalFee || 0,
               status: 'archived'
@@ -221,16 +225,22 @@ router.post('/set', async (req, res) => {
           }
         }
       } else if (key === 'notifications') {
-        await Notification.deleteMany({});
+        await Notification.deleteMany({ triggerType: { $ne: 'absent-sms' } });
         if (Array.isArray(value)) {
           for (const n of value) {
             await Notification.create({
               id: n.id,
-              title: n.title,
+              recipient: n.recipient,
+              className: n.className,
+              section: n.section,
+              studentId: n.studentId,
+              subject: n.subject,
               message: n.message,
-              target: n.target,
-              dateSent: n.dateSent,
-              readBy: n.readBy
+              priority: n.priority,
+              dateTime: n.dateTime,
+              read: n.read || [],
+              photo: n.photo,
+              triggerType: 'announcement'
             });
           }
         }

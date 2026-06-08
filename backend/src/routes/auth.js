@@ -215,18 +215,24 @@ router.post('/send-otp-monolith', async (req, res) => {
   }
 });
 
-// @route   POST /api/auth/verify-credentials
-// @desc    Verify credentials from the frontend monolith
-// @access  Public
 router.post('/verify-credentials', async (req, res) => {
   const { loginId, password, role } = req.body;
+  console.log(`[LOGIN DEBUG] Received login attempt. ID: "${loginId}", Role: "${role}", Password Length: ${password ? password.length : 0}`);
   try {
     const escaped = (loginId || '').replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const user = await User.findOne({ loginId: { $regex: new RegExp('^' + escaped + '$', 'i') } });
-    if (!user) return res.json({ success: false, message: 'Invalid username' });
-    if (role && user.role !== role) return res.json({ success: false, message: 'Role mismatch' });
+    if (!user) {
+      console.log(`[LOGIN DEBUG] User "${loginId}" NOT found in database.`);
+      return res.json({ success: false, message: 'Invalid username' });
+    }
+    console.log(`[LOGIN DEBUG] Found user: "${user.loginId}", Role: "${user.role}", Email: "${user.email}"`);
+    if (role && user.role !== role) {
+      console.log(`[LOGIN DEBUG] Role mismatch. Expected: "${role}", Found: "${user.role}"`);
+      return res.json({ success: false, message: 'Role mismatch' });
+    }
 
     const isMatch = await user.matchPassword(password);
+    console.log(`[LOGIN DEBUG] Password match result: ${isMatch}`);
     if (!isMatch) return res.json({ success: false, message: 'Invalid password' });
 
     let studentInfo = null;
@@ -235,6 +241,7 @@ router.post('/verify-credentials', async (req, res) => {
     }
     res.json({ success: true, role: user.role, studentInfo });
   } catch (err) {
+    console.error(`[LOGIN DEBUG] Error:`, err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

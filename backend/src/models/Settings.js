@@ -11,7 +11,7 @@ const SettingsSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    default: '+91 90599 92147'
+    default: '+91 98484 24618'
   },
   academicYear: {
     type: String,
