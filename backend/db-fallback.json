@@ -20,5 +20,8 @@
   "holidays": [],
   "exams": [],
   "leaves": [],
-  "hallTickets": []
+  "hallTickets": [],
+  "system": {
+    "academicYear": "2027-2028"
+  }
 }

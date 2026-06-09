@@ -8283,27 +8283,42 @@ function initiateYearUpdate() {
   reAuthCallback = () => {
     document.getElementById('formModalTitle').textContent = 'Update Academic Year';
     const sys = DB.getObj('system',{academicYear:'2026-2027'});
-    // ADDED: compute next year automatically — admin no longer types it.
-    // Only one-year forward increments are permitted (e.g. 2026-2027 -> 2027-2028),
-    // so there's nothing for the admin to choose. We show the new year as
-    // read-only and require confirmation.
     const curParts = sys.academicYear.split('-').map(Number);
     const proposedYear = `${curParts[0]+1}-${curParts[1]+1}`;
+    const previousYear = `${curParts[0]-1}-${curParts[1]-1}`;
+    
     document.getElementById('formModalBody').innerHTML = `
-      <div class="alert alert-warning"><span class="alert-icon"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></span></span>Updating the academic year will auto-promote every active student by one class. Class 10 students will be archived as Graduated. Login IDs and passwords will be regenerated for the new year. This cannot be undone.</div>
+      <div class="alert alert-warning"><span class="alert-icon"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></span></span>Select one of the options below to either advance the academic year or revert to the previous academic year.</div>
+      
       <div class="form-group">
         <label class="form-label">Current Academic Year</label>
         <div style="font-size:1.3rem;font-weight:800;color:var(--primary-dark);padding:8px 0">${sys.academicYear}</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Next Academic Year</label>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--success);padding:8px 0">${proposedYear}</div>
-        <input type="hidden" id="newAcadYear" value="${proposedYear}">
-        <small style="color:var(--text-muted);font-size:0.78rem">Year advances by exactly one year. To skip, run this update again next year.</small>
+      
+      <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;" />
+      
+      <div style="display:flex; flex-direction:column; gap:15px;">
+        <div class="form-group" style="border:1px solid var(--border); padding:12px; border-radius:6px; background:var(--background-alt, #f9fafb)">
+          <div style="font-weight:bold; font-size:1.05rem; margin-bottom:5px; color:var(--primary)">Option 1: Advance Academic Year</div>
+          <div style="margin-bottom:10px; font-size:0.85rem; color:var(--text-muted)">
+            Promote active students by one class (e.g. Nursery -> LKG, 9 -> 10) and auto-archive Class 10 graduates.
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="confirmYearUpdate()">Advance to ${proposedYear}</button>
+          <input type="hidden" id="newAcadYear" value="${proposedYear}">
+        </div>
+
+        <div class="form-group" style="border:1px solid var(--border); padding:12px; border-radius:6px; background:var(--background-alt, #f9fafb)">
+          <div style="font-weight:bold; font-size:1.05rem; margin-bottom:5px; color:var(--danger)">Option 2: Revert to Previous Year</div>
+          <div style="margin-bottom:10px; font-size:0.85rem; color:var(--text-muted)">
+            Demote active students back by one class (e.g. LKG -> Nursery, 10 -> 9), restore archived graduates of ${previousYear} back to active class 10, and revert year to ${previousYear}.
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="confirmYearRevert()">Revert to ${previousYear}</button>
+          <input type="hidden" id="prevAcadYear" value="${previousYear}">
+        </div>
       </div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-primary" onclick="confirmYearUpdate()">Advance to ${proposedYear}</button>
-        <button class="btn btn-secondary" onclick="closeModal('formModal')">Cancel</button>
+      
+      <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal('formModal')">Close</button>
       </div>
     `;
     document.getElementById('formModal').classList.add('active');
@@ -8431,6 +8446,120 @@ function confirmYearUpdate() {
     updateDashYearBadge();
     showToast(`Academic year updated to ${newYear}. ${promoted} students promoted with new IDs, ${graduated} graduated (10th class) archived.`);
   });
+}
+
+function confirmYearRevert() {
+  const prevYear = document.getElementById('prevAcadYear')?.value.trim();
+  if (!prevYear || !/^\d{4}-\d{4}$/.test(prevYear)) { showToast('Invalid year format','error'); return; }
+  
+  const sys = DB.getObj('system',{academicYear:'2026-2027'});
+  const curParts = sys.academicYear.split('-').map(Number);
+  const yearParts = prevYear.split('-').map(Number);
+  
+  if (yearParts[0] !== curParts[0] - 1) {
+    showToast(`Academic year can only be reverted by one year. Previous allowed year: ${curParts[0]-1}-${curParts[1]-1}`, 'error');
+    return;
+  }
+  
+  showConfirm('Revert Academic Year',
+    `Revert academic year from ${sys.academicYear} back to ${prevYear}?\n\nThis will DEMOTE every active student back by one class:\nLKG -> Nursery, UKG -> LKG, 1 -> UKG, ... 10 -> 9.\n\nStudents auto-archived as Graduated for ${prevYear} will be restored back to active status in Class 10.\n\nLogin IDs and passwords will be regenerated to reflect the previous year.`,
+    'Revert Year', 'btn-danger', () => {
+      
+      const demotion = {
+        'LKG':'Nursery', 'UKG':'LKG', '1':'UKG',
+        '2':'1', '3':'2', '4':'3', '5':'4', '6':'5',
+        '7':'6', '8':'7', '9':'8', '10':'9'
+      };
+      
+      const students = DB.get('students') || [];
+      const archived = DB.get('archived') || [];
+      
+      let demoted = 0;
+      let restoredCount = 0;
+      const stillActive = [];
+      const remainingArchived = [];
+      
+      students.forEach(s => {
+        if (s.status !== 'active') { stillActive.push(s); return; }
+        if (demotion[s.className]) {
+          s._oldId = s.id;
+          s.className = demotion[s.className];
+          s.academicYear = prevYear;
+          stillActive.push(s);
+          demoted++;
+        } else {
+          stillActive.push(s);
+        }
+      });
+      
+      archived.forEach(s => {
+        if (s.status === 'archived' && s.reason === 'Graduated' && s.academicYearOut === prevYear) {
+          s.status = 'active';
+          s.className = '10';
+          s.academicYear = prevYear;
+          s._oldId = s.id;
+          delete s.schoolOutDate;
+          delete s.reason;
+          delete s.archiveDate;
+          delete s.academicYearOut;
+          stillActive.push(s);
+          restoredCount++;
+        } else {
+          remainingArchived.push(s);
+        }
+      });
+      
+      const yyPrefix = prevYear.match(/(\d{4})/)[1].slice(-2);
+      const buckets = {};
+      stillActive.forEach(s => {
+        const key = s.className;
+        if (!buckets[key]) buckets[key] = [];
+        buckets[key].push(s);
+      });
+      
+      const idMap = {};
+      Object.keys(buckets).forEach(cls => {
+        const list = buckets[cls];
+        list.sort((a,b) => {
+          const ra = parseInt(a.rollNo, 10) || 9999;
+          const rb = parseInt(b.rollNo, 10) || 9999;
+          return ra - rb;
+        });
+        const classCode = getClassCode(cls);
+        list.forEach((s, idx) => {
+          const seq = String(idx + 1).padStart(3, '0');
+          const newId = `${yyPrefix}NHS${classCode}${seq}`;
+          const currentId = s._oldId || s.id;
+          idMap[currentId] = newId;
+          s.id = newId;
+          s.loginId = newId;
+          s.password = newId;
+          delete s._oldId;
+        });
+      });
+      
+      const fees = DB.get('fees') || [];
+      fees.forEach(f => { if (idMap[f.studentId]) f.studentId = idMap[f.studentId]; });
+      DB.set('fees', fees);
+      
+      const reports = DB.get('reports') || [];
+      reports.forEach(r => { if (idMap[r.studentId]) r.studentId = idMap[r.studentId]; });
+      DB.set('reports', reports);
+      
+      const complaints = DB.get('complaints') || [];
+      complaints.forEach(c => { if (idMap[c.stuId]) c.stuId = idMap[c.stuId]; });
+      DB.set('complaints', complaints);
+      
+      DB.set('students', stillActive);
+      DB.set('archived', remainingArchived);
+      
+      sys.academicYear = prevYear;
+      DB.set('system', sys);
+      
+      closeModal('formModal');
+      updateDashYearBadge();
+      showToast(`Academic year reverted to ${prevYear}. ${demoted} students demoted, ${restoredCount} graduated students restored to Class 10.`);
+    });
 }
 
 function loadSchoolOutStudents() {
