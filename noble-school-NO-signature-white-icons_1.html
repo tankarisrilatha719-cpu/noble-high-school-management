@@ -3074,14 +3074,14 @@ id="dlFormat">
 
           <!-- Step 3: All students marks entry -->
           <div id="repStep3" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+            <div style="margin-bottom:12px;">
               <h3 style="font-size:1rem;font-weight:700;color:var(--primary-dark)">Step 3: Enter Marks — <span id="repExamLabel"></span></h3>
-              <div style="display:flex;gap:10px">
-                <button class="btn btn-secondary" onclick="repSaveAllReports(false)"><span class="emoji-icon-wrap">📁</span> Save as Draft</button>
-                <button class="btn btn-success" onclick="repSaveAllReports(true)"><span class="emoji-icon-wrap">🚀</span> Save & Publish</button>
-              </div>
             </div>
             <div id="repAllStudentsMarks"></div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:15px;border-top:1px solid var(--border)">
+              <button class="btn btn-secondary" onclick="repSaveAllReports(false)"><span class="emoji-icon-wrap">📁</span> Save as Draft</button>
+              <button class="btn btn-success" onclick="repSaveAllReports(true)"><span class="emoji-icon-wrap">🚀</span> Save & Publish</button>
+            </div>
           </div>
         </div>
 
@@ -5152,6 +5152,9 @@ function showAdminSection(name) {
     const fs  = document.getElementById('feeSummaryCards'); if (fs) fs.innerHTML = '';
     const pa  = document.getElementById('payAmount'); if (pa) pa.value = '';
   }
+  if (currentAdminSection === 'reports' && name !== 'reports') {
+    repClearFormState();
+  }
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-'+name).classList.add('active');
   const sb = document.getElementById('adminSidebar');
@@ -5176,7 +5179,10 @@ function showAdminSection(name) {
     case 'complaints': renderComplaintsTable(); break;
     case 'admissions': renderAdmissionsTable(); break;
     case 'feeSummary': renderFeeSummary(); break;
-    case 'reports': renderRepClassButtons(); break;
+    case 'reports':
+      repClearFormState();
+      renderRepClassButtons();
+      break;
     case 'printReports': populatePrintExamDropdowns(); break;
     case 'hallTickets': renderHallTicketsTable(); break;
     case 'academicYear': updateDashYearBadge(); switchAcadTab('yearUpdate'); break;
@@ -6311,6 +6317,8 @@ function printExamTimetable(examId) {
       body{margin:0;background:#fff}
       .toolbar{display:none}
       .wrap{width:auto;margin:0;padding:8mm;box-shadow:none}
+      th{background:transparent !important;color:#1a2535 !important;border:1px solid #1a2535 !important}
+      .exam-title{background:transparent !important;color:#1a3a6b !important;border:1.5px solid #1a3a6b !important;padding:8px 20px;display:inline-block}
       @page{size:A4;margin:8mm}
     }
   
@@ -6584,6 +6592,19 @@ function renderRepClassButtons() {
   el.innerHTML = classes.length ? classes.map(c=>`<button class="btn btn-secondary" onclick="repSelectClass('${c}')">${c}${ordSuffix(c)} Class</button>`).join('') : '<p style="color:var(--text-muted)">No active students found.</p>';
 }
 
+function repClearFormState() {
+  _repCurrentClass = '';
+  _repEditingExamName = null;
+  const s2 = document.getElementById('repStep2'); if (s2) s2.style.display = 'none';
+  const s3 = document.getElementById('repStep3'); if (s3) s3.style.display = 'none';
+  const nameInput = document.getElementById('repCommonExamName'); if (nameInput) nameInput.value = '';
+  const daysInput = document.getElementById('repWorkingDays'); if (daysInput) daysInput.value = '';
+  const uiInput = document.getElementById('repUseInternals'); if (uiInput) uiInput.checked = false;
+  repToggleInternalsUI();
+  const mDiv = document.getElementById('repAllStudentsMarks'); if (mDiv) mDiv.innerHTML = '';
+  renderRepClassButtons();
+}
+
 function ordSuffix(c) {
   const n=parseInt(c);
   if(isNaN(n)) return '';
@@ -6840,11 +6861,34 @@ function repSaveAllReports(isPublish) {
     return;
   }
 
+  const students = DB.get('students').filter(s=>s.status==='active'&&s.className===_repCurrentClass);
+  const studentCount = students.length;
+  const className = _repCurrentClass;
+  const todayStr = new Date().toLocaleDateString('en-IN');
+
+  if (isPublish) {
+    showConfirm(
+      'Confirm Publish Reports', 
+      `Are you sure you want to save and publish these reports?
+
+Class: Class ${className}
+Students: ${studentCount} students
+Exam: ${examName}
+Date: ${todayStr}`,
+      'Publish', 
+      'btn-success', 
+      () => repSaveAllReportsActual(isPublish, examName, examType, totalPerSubj, workingDays, useInternals, internalMax, externalMax, students)
+    );
+  } else {
+    repSaveAllReportsActual(isPublish, examName, examType, totalPerSubj, workingDays, useInternals, internalMax, externalMax, students);
+  }
+}
+
+function repSaveAllReportsActual(isPublish, examName, examType, totalPerSubj, workingDays, useInternals, internalMax, externalMax, students) {
   const publishTimeVal = document.getElementById('repPublishTime').value;
-  const published = (isPublish !== undefined) ? isPublish : !!publishTimeVal;
+  const published = !!isPublish;
   const publishTime = published ? (publishTimeVal ? new Date(publishTimeVal).toISOString() : new Date().toISOString()) : null;
   
-  const students = DB.get('students').filter(s=>s.status==='active'&&s.className===_repCurrentClass);
   const subjects = getSubjectsByClass(_repCurrentClass);
   const sys = DB.getObj('system',{academicYear:'2026-2027'});
   const reports = DB.get('reports');
@@ -6938,9 +6982,8 @@ function repSaveAllReports(isPublish) {
   DB.set('reports', reports);
   populatePrintExamDropdowns();
   showToast(`${saved} reports ${_repEditingExamName ? 'updated' : 'saved'}! ${published?'Will publish on '+new Date(publishTime).toLocaleString('en-IN'):'(Not yet published)'}`);
-  // Refresh the recent panel so the new entry appears immediately.
-  renderRepRecentPanel(_repCurrentClass);
-  _repEditingExamName = null;
+  // Close the form state completely after saving/publishing
+  repClearFormState();
 }
 
 // Recently Added Reports panel — class buttons + list of exams in selected class.
@@ -7391,9 +7434,12 @@ function openReportPreviewWindow(reportHtml, title) {
       body{margin:0;background:#fff; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .toolbar{display:none}
       .preview-wrap{padding:0;gap:0}
-      .report-card-print{width:100%;min-height:auto;box-shadow:none;page-break-inside:avoid;padding:10mm;border:2px solid #1a3a6b !important;border-radius:8px; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
-      .rc-table th{background-color:var(--primary-dark) !important;color:#fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .report-card-print{width:100%;height:277mm;box-shadow:none;page-break-inside:avoid;padding:10mm;border:2px solid #1a3a6b !important;border-radius:8px;display:flex;flex-direction:column;justify-content:space-between; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .rc-table th{background:transparent !important;color:#1a2535 !important;border:1px solid #1a2535 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .rc-table tr:nth-child(even) td{background-color:#f8f9fa !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .rc-overall-grade{background:transparent !important;color:var(--primary-dark) !important;border:1.5px solid var(--primary-dark) !important;}
+      .rc-overall-grade .rc-summary-value{color:var(--primary-dark) !important;}
+      .rc-overall-grade .rc-summary-label{color:var(--text-muted) !important;}
       div[style*="page-break-after"]{page-break-after:always}
       @page{size:A4;margin:10mm}
     }
@@ -9372,6 +9418,8 @@ function downloadStudentListPDF(students, selectedFields, fieldMap, cls, sec) {
       body{margin:0;background:#fff}
       .toolbar{display:none}
       .wrap{width:auto;margin:0;padding:8mm;box-shadow:none}
+      th{background:transparent !important;color:#1a2535 !important;border:1px solid #1a2535 !important}
+      .doc-title{background:transparent !important;color:#1a3a6b !important;border:1.5px solid #1a3a6b !important;padding:6px 16px;display:inline-block}
       @page{size:A4 landscape;margin:7mm}
     }
   
@@ -10586,6 +10634,9 @@ function buildFeeReceiptHTML(fee, stu, opts) {
     body { background: #fff; }
     .toolbar { display: none; }
     .receipt { box-shadow: none; margin: 0; padding: 14px; }
+    table.r th { background: transparent !important; color: #1e3a5f !important; }
+    .amount-row td { background: transparent !important; }
+    .student-copy-banner { background: transparent !important; color: #1a2535 !important; border: 1.5px solid #c8a951 !important; }
     @page { size: A4; margin: 8mm; }
   }
 
