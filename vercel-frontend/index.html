@@ -2050,6 +2050,31 @@ button[onclick="studentLogout()"]:hover .emoji-icon-wrap {
   </div>
 </div>
 
+<!-- STUDENT NOTIFICATION DETAIL MODAL -->
+<div class="modal-overlay" id="stuNotifDetailModal">
+  <div class="modal-box" style="max-width: 650px; width: 90%; padding: 25px; border-radius: 12px; position: relative; background: #fff;">
+    <button class="modal-close" onclick="closeModal('stuNotifDetailModal')" style="position: absolute; right: 15px; top: 15px; background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-top: 10px;">
+        <h3 id="stuNotifDetailSubject" style="font-family: 'Playfair Display', serif; color: var(--primary-dark); font-size: 1.3rem; margin: 0; font-weight: 700; max-width: 70%;"></h3>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+          <span id="stuNotifDetailPriority" class="badge"></span>
+          <span id="stuNotifDetailDate" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+        </div>
+      </div>
+      <div id="stuNotifDetailMessage" style="font-size: 1rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; margin: 10px 0; max-height: 350px; overflow-y: auto; padding-right: 5px;"></div>
+      <div id="stuNotifDetailPhotoArea" style="display: none; text-align: center; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-light);">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px;">ATTACHED CARD</div>
+        <img id="stuNotifDetailPhoto" src="" style="max-width: 100%; max-height: 300px; border-radius: 6px; cursor: pointer; object-fit: contain; background: #fff;" onclick="zoomNotifPhoto(event, this.src)">
+        <div style="font-size:0.8rem; color:var(--primary); cursor:pointer; font-weight:500; margin-top: 6px;" onclick="zoomNotifPhoto(event, document.getElementById('stuNotifDetailPhoto').src)">🔍 Click to zoom / print card</div>
+      </div>
+      <div style="text-align: right; border-top: 1px solid var(--border); padding-top: 15px;">
+        <button class="btn btn-secondary" onclick="closeModal('stuNotifDetailModal')">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- LOGIN MODAL -->
 <div class="modal-overlay" id="loginChoiceModal">
   <div class="modal-box">
@@ -4886,9 +4911,9 @@ function renderStudentNotifs() {
   
   const html = relevant.map(n => {
     const isUnread = !n.read.includes(s.id);
-    return `<div class="notification-item ${isUnread?'unread':''} ${n.priority.toLowerCase()}" onclick="markNotifRead('${n.id}');this.classList.remove('unread')" style="cursor:pointer">
+    return `<div class="notification-item ${isUnread?'unread':''} ${n.priority.toLowerCase()}" onclick="openStudentNotifDetails('${n.id}', this)" style="cursor:pointer">
       <div class="notification-header">
-        <div class="notification-subject">${isUnread?'<span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg></span> ':''}${n.subject}</div>
+        <div class="notification-subject">${isUnread?'<span class="emoji-icon-wrap" style="color:var(--danger);"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg></span> ':''}${n.subject}</div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="badge badge-${n.priority.toLowerCase()}">${n.priority}</span>
           <span class="notification-meta">${fmtDate(n.dateTime)}</span>
@@ -4904,6 +4929,44 @@ function renderStudentNotifs() {
     </div>`;
   }).join('');
   document.getElementById('stuNotifsContent').innerHTML = html;
+}
+
+function openStudentNotifDetails(id, element) {
+  const notifications = DB.get('notifications');
+  const n = notifications.find(x => x.id === id);
+  if (!n || !currentStudent) return;
+  
+  if (!n.read.includes(currentStudent.id)) {
+    n.read.push(currentStudent.id);
+    DB.set('notifications', notifications);
+  }
+  
+  if (element) {
+    element.classList.remove('unread');
+    const dot = element.querySelector('.notification-subject .emoji-icon-wrap');
+    if (dot) dot.remove();
+  }
+  
+  document.getElementById('stuNotifDetailSubject').textContent = n.subject;
+  document.getElementById('stuNotifDetailDate').textContent = fmtDate(n.dateTime);
+  
+  const pBadge = document.getElementById('stuNotifDetailPriority');
+  pBadge.textContent = n.priority;
+  pBadge.className = `badge badge-${n.priority.toLowerCase()}`;
+  
+  document.getElementById('stuNotifDetailMessage').textContent = n.message;
+  
+  const photoArea = document.getElementById('stuNotifDetailPhotoArea');
+  const photoImg = document.getElementById('stuNotifDetailPhoto');
+  if (n.photo) {
+    photoImg.src = n.photo;
+    photoArea.style.display = 'block';
+  } else {
+    photoImg.src = '';
+    photoArea.style.display = 'none';
+  }
+  
+  document.getElementById('stuNotifDetailModal').classList.add('active');
 }
 
 function markNotifRead(id) {
@@ -7201,7 +7264,7 @@ function buildReportCardHTML(student, report) {
         <div><div class="rc-info-row"><span class="rc-info-label">Name:</span><span>${student.name}</span></div><div class="rc-info-row"><span class="rc-info-label">Student ID / Login ID:</span><span>${student.id} / ${student.loginId||student.id}</span></div><div class="rc-info-row"><span class="rc-info-label">Class:</span><span>${student.className}</span></div><div class="rc-info-row"><span class="rc-info-label">Section:</span><span>${student.section}</span></div></div>
         <div><div class="rc-info-row"><span class="rc-info-label">Roll No:</span><span>${student.rollNo}</span></div><div class="rc-info-row"><span class="rc-info-label">Father:</span><span>${student.fatherName}</span></div><div class="rc-info-row"><span class="rc-info-label">Exam:</span><span>${report.examType}</span></div><div class="rc-info-row"><span class="rc-info-label">Year:</span><span>${report.academicYear||sys.academicYear}</span></div></div>
       </div>
-      <div style="width:70px;height:80px;border:1.5px solid #ccc;border-radius:4px;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f8f8f8">
+      <div style="width:90px;height:110px;border:1.5px solid #ccc;border-radius:4px;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f8f8f8">
         ${student.photo?`<img src="${student.photo}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:0.7rem;color:#aaa;text-align:center">Photo</span>'}
       </div>
     </div>
@@ -7388,7 +7451,7 @@ function openReportPreviewWindow(reportHtml, title) {
     .toolbar button{background:#c8a951;color:#1a2535;border:none;padding:8px 18px;border-radius:5px;font-size:10.5pt;font-weight:700;cursor:pointer}
     .toolbar button:hover{background:#d4b75e}
     .preview-wrap{padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:14px}
-    .report-card-print{width:210mm;min-height:297mm;margin:0;padding:15mm;background:#fff;font-size:11pt;box-shadow:0 2px 12px rgba(0,0,0,0.08);border:2px solid var(--primary-dark);border-radius:8px;position:relative}
+    .report-card-print{width:210mm;min-height:297mm;margin:0;padding:15mm;background:#fff;font-size:11pt;box-shadow:0 2px 12px rgba(0,0,0,0.08);border:none;border-radius:8px;position:relative}
     .rc-header{text-align:center;border-bottom:2px solid var(--primary);padding-bottom:12px;margin-bottom:14px}
     .rc-school-name{font-family:'Playfair Display',serif;font-size:18pt;color:var(--primary-dark);font-weight:900}
     .rc-address{font-size:9pt;color:var(--text-muted);margin:2px 0}
@@ -7397,7 +7460,7 @@ function openReportPreviewWindow(reportHtml, title) {
     .rc-info-label{font-weight:700;color:var(--text-muted);min-width:80px}
     
     .rc-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:10pt;table-layout:fixed;border:1px solid #1a2535}
-    .rc-table th{background:var(--primary-dark) !important;color:#fff !important;padding:8px 10px;text-align:left;font-size:9.5pt;font-weight:700;border:1px solid #1a2535}
+    .rc-table th{background:transparent !important;color:#1a2535 !important;padding:8px 10px;text-align:left;font-size:9.5pt;font-weight:700;border:1px solid #1a2535}
     .rc-table td{padding:8px 10px;border:1px solid #1a2535;font-size:9.5pt;color:#1a2535}
     .rc-table tr:nth-child(even) td{background:#f8f9fa !important}
     
@@ -7421,7 +7484,7 @@ function openReportPreviewWindow(reportHtml, title) {
     .rc-summary-item{flex:1;background:var(--bg-light);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--border)}
     .rc-summary-label{font-size:8pt;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
     .rc-summary-value{font-size:14pt;font-weight:800;color:var(--primary-dark)}
-    .rc-overall-grade{background:var(--primary);color:#fff;border-radius:8px;padding:12px 20px;text-align:center}
+    .rc-overall-grade{background:transparent;color:var(--primary-dark);border:1.5px solid var(--primary-dark);border-radius:8px;padding:12px 20px;text-align:center}
     .rc-footer{display:flex;justify-content:space-between;margin-top:28px;padding-top:14px;border-top:1px solid var(--border)}
     .rc-sign-line{min-width:140px}
     .rc-sign-title{font-size:9pt;color:var(--text-muted);margin-bottom:24px;font-weight:600}
@@ -7434,7 +7497,7 @@ function openReportPreviewWindow(reportHtml, title) {
       body{margin:0;background:#fff; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .toolbar{display:none}
       .preview-wrap{padding:0;gap:0}
-      .report-card-print{width:100%;height:277mm;box-shadow:none;page-break-inside:avoid;padding:10mm;border:2px solid #1a3a6b !important;border-radius:8px;display:flex;flex-direction:column;justify-content:space-between; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .report-card-print{width:100%;height:277mm;box-shadow:none;page-break-inside:avoid;padding:10mm;border:none !important;border-radius:8px;display:flex;flex-direction:column;justify-content:space-between; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .rc-table th{background:transparent !important;color:#1a2535 !important;border:1px solid #1a2535 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .rc-table tr:nth-child(even) td{background-color:#f8f9fa !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .rc-overall-grade{background:transparent !important;color:var(--primary-dark) !important;border:1.5px solid var(--primary-dark) !important;}
@@ -7609,7 +7672,7 @@ function printHallTicketsBatch(examId, cls, sec) {
     .logo{width:32px;height:32px;object-fit:contain;border-radius:50%;border:1.5px solid #c8a951}
     .school-name{font-size:11pt;font-weight:900;color:#1a3a6b;line-height:1.1}
     .school-sub{font-size:6.5pt;color:#5a6a82;line-height:1.1}
-    .exam-badge{background:#1a3a6b;color:#fff;padding:1px 8px;border-radius:3px;font-size:7pt;font-weight:700;margin-top:2px;display:inline-block}
+    .exam-badge{background:transparent;color:#1a3a6b;border:1px solid #1a3a6b;padding:1px 8px;border-radius:3px;font-size:7pt;font-weight:700;margin-top:2px;display:inline-block}
 
     .ht-body{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:start;margin-bottom:3px;flex-shrink:0}
     .ht-info table{border-collapse:collapse}
@@ -7621,13 +7684,13 @@ function printHallTicketsBatch(examId, cls, sec) {
     /* Horizontal schedule table: rows are Date / Subject / Invigilator Signature.
        The first column is the row label (a TH); each remaining column is one exam day. */
     .schedule-table{width:100%;border-collapse:collapse;font-size:7pt;margin-bottom:3px;table-layout:fixed}
-    .schedule-table th{background:#1a3a6b;color:#fff;padding:2.5px 4px;text-align:left;font-size:7pt;width:24mm;white-space:nowrap}
+    .schedule-table th{background:transparent;color:#1a3a6b;border:1px solid #d0dbed;padding:2.5px 4px;text-align:left;font-size:7pt;width:24mm;white-space:nowrap}
     .schedule-table td{padding:2px 4px;border:1px solid #d0dbed;line-height:1.2;text-align:center;background:#fff}
     .schedule-table td.sig-cell{height:11mm;background:#fff}
     .schedule-table tr:nth-child(2) td{background:#f8faff;font-size:7.5pt}
 
     /* Instructions box: clean note-style block. */
-    .ht-instructions{font-size:6.8pt;color:#1a2535;border:1px solid #c8a951;padding:3px 7px;background:#fffbef;border-radius:3px;line-height:1.3;margin-top:2px;overflow:hidden;display:flex;gap:5px;align-items:flex-start}
+    .ht-instructions{font-size:6.8pt;color:#1a2535;border:1px solid #c8a951;padding:3px 7px;background:transparent;border-radius:3px;line-height:1.3;margin-top:2px;overflow:hidden;display:flex;gap:5px;align-items:flex-start}
     .ht-instructions-label{font-weight:700;color:#1a3a6b;white-space:nowrap}
     .ht-instructions-body{flex:1}
 
@@ -7646,10 +7709,10 @@ function printHallTicketsBatch(examId, cls, sec) {
       .ht-page{width:auto;page-break-after:always;break-after:page}
       .ht-page:last-child{page-break-after:auto;break-after:auto}
       .ht{box-shadow:none; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
-      .schedule-table th{background-color:#1a3a6b !important;color:#fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .schedule-table th{background-color:transparent !important;color:#1a3a6b !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .schedule-table td{background-color:#fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       .schedule-table tr:nth-child(2) td{background-color:#f8faff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
-      .ht-instructions{background-color:#fffbef !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
+      .ht-instructions{background-color:transparent !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;}
       @page{size:A4 portrait;margin:6mm}
     }
   
@@ -7751,7 +7814,7 @@ function viewStudentHallTicket(htId) {
     .logo{width:40px;height:40px;object-fit:contain;border-radius:50%;border:2px solid #c8a951}
     .school-name{font-size:13pt;font-weight:900;color:#1a3a6b}
     .school-sub{font-size:7.5pt;color:#5a6a82}
-    .exam-badge{background:#1a3a6b;color:#fff;padding:2px 10px;border-radius:3px;font-size:8pt;font-weight:700;margin-top:3px;display:inline-block}
+    .exam-badge{background:transparent;color:#1a3a6b;border:1.5px solid #1a3a6b;padding:2px 10px;border-radius:3px;font-size:8pt;font-weight:700;margin-top:3px;display:inline-block}
     .ht-body{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;margin-bottom:5px}
     .ht-info table td{padding:2px 4px;font-size:9pt}
     .ht-info table td:first-child{color:#5a6a82;font-weight:600;white-space:nowrap;padding-right:8px}
@@ -7759,11 +7822,11 @@ function viewStudentHallTicket(htId) {
     .ht-photo img{width:100%;height:100%;object-fit:cover}
     /* Horizontal layout: Date / Subject / Invigilator rows, with one column per exam day. */
     .schedule-table{width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:5px;table-layout:fixed}
-    .schedule-table th{background:#1a3a6b;color:#fff;padding:3px 6px;text-align:left;width:32mm;white-space:nowrap}
+    .schedule-table th{background:transparent;color:#1a3a6b;border:1px solid #d0dbed;padding:3px 6px;text-align:left;width:32mm;white-space:nowrap}
     .schedule-table td{padding:3px 6px;border:1px solid #d0dbed;text-align:center}
     .schedule-table td.sig-cell{height:14mm}
     .schedule-table tr:nth-child(2) td{background:#f8faff;font-weight:600}
-    .ht-instructions{font-size:7.5pt;color:#1a2535;border:1px solid #c8a951;padding:5px 8px;background:#fffbef;border-radius:3px;line-height:1.35;margin-bottom:6px;display:flex;gap:6px}
+    .ht-instructions{font-size:7.5pt;color:#1a2535;border:1px solid #c8a951;padding:5px 8px;background:transparent;border-radius:3px;line-height:1.35;margin-bottom:6px;display:flex;gap:6px}
     .ht-instructions-label{font-weight:700;color:#1a3a6b;white-space:nowrap}
     .ht-instructions-body{flex:1}
     .ht-bottom{display:flex;justify-content:space-between;align-items:flex-end}
@@ -9407,10 +9470,10 @@ function downloadStudentListPDF(students, selectedFields, fieldMap, cls, sec) {
     .school-logo{width:60px;height:60px;object-fit:contain;border-radius:50%;border:2px solid #c8a951}
     .school-name{font-size:20pt;font-weight:900;color:#1a3a6b;letter-spacing:1px}
     .school-sub{font-size:9pt;color:#5a6a82}
-    .doc-title{background:#1a3a6b;color:#fff;padding:6px 16px;font-size:12pt;font-weight:700;letter-spacing:1px;margin-top:8px;display:inline-block}
+    .doc-title{background:transparent;color:#1a3a6b;border:1.5px solid #1a3a6b;padding:6px 16px;font-size:12pt;font-weight:700;letter-spacing:1px;margin-top:8px;display:inline-block}
     .meta{display:flex;justify-content:space-between;margin:10px 0;font-size:9pt;color:#5a6a82}
     table{width:100%;border-collapse:collapse;font-size:8.5pt}
-    th{background:#1a3a6b;color:#fff;padding:6px 8px;text-align:left;border:1px solid #1a3a6b}
+    th{background:transparent;color:#1a3a6b;padding:6px 8px;text-align:left;border:1px solid #1a3a6b}
     td{padding:5px 8px;border:1px solid #d0dbed;word-break:break-word}
     tr:nth-child(even) td{background:#f8faff}
     .footer{margin-top:14px;text-align:center;font-size:8pt;color:#5a6a82;border-top:1px solid #d0dbed;padding-top:8px}
@@ -10615,7 +10678,7 @@ function buildFeeReceiptHTML(fee, stu, opts) {
   .toolbar button{background:#c8a951;color:#1a2535;border:none;padding:8px 18px;border-radius:5px;font-size:10.5pt;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif}
   .toolbar button:hover{background:#d4b75e}
   .receipt { max-width: 720px; margin: 18px auto; padding: 30px; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-  .student-copy-banner { background: #c8a951; color: #1a2535; text-align: center; font-weight: 700; padding: 6px; margin-bottom: 14px; border-radius: 4px; letter-spacing: 1.5px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 0.9rem; }
+  .student-copy-banner { background: transparent; color: #1e3a5f; border: 1.5px solid #c8a951; text-align: center; font-weight: 700; padding: 6px; margin-bottom: 14px; border-radius: 4px; letter-spacing: 1.5px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 0.9rem; }
   .header { text-align: center; border-bottom: 3px double #1e3a5f; padding-bottom: 14px; margin-bottom: 20px; }
   .header img { width: 70px; height: 70px; object-fit: contain; }
   .header h1 { margin: 8px 0 0; color: #1e3a5f; font-family: 'Georgia', serif; }
@@ -10624,8 +10687,8 @@ function buildFeeReceiptHTML(fee, stu, opts) {
   .receipt-meta strong { color: #1e3a5f; }
   table.r { width: 100%; border-collapse: collapse; margin: 18px 0; }
   table.r th, table.r td { padding: 10px 12px; border: 1px solid #ccc; text-align: left; font-size: 0.95rem; }
-  table.r th { background: #f0f4f8; color: #1e3a5f; width: 40%; }
-  .amount-row td { background: #fef9e6; }
+  table.r th { background: transparent; color: #1e3a5f; width: 40%; }
+  .amount-row td { background: transparent; }
   .amount-row td:last-child { color: #047857; font-weight: bold; font-size: 1.1rem; }
   .footer { margin-top: 30px; display: flex; justify-content: space-between; font-size: 0.88rem; }
   .footer .sig { border-top: 1px solid #888; padding-top: 6px; min-width: 180px; text-align: center; color: #555; }
@@ -11758,7 +11821,7 @@ function openPrintWindow(html, title) {
   win.document.write('.qr-grid-name { font-size: 7.5pt; font-weight: 600; margin-top: 2px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }');
   
   win.document.write('@media print {');
-  win.document.write('  body { background: transparent; }');
+  win.document.write('  body { background: white; color: black; }');
   win.document.write('  .toolbar { display: none !important; }');
   win.document.write('  .preview-wrap { padding: 0; gap: 0; }');
   win.document.write('  .profile-card-print, .qr-grid-page { margin: 0 !important; box-shadow: none !important; border: none !important; page-break-after: always; page-break-inside: avoid; }');
