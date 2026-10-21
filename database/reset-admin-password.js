@@ -4,9 +4,9 @@ const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
 
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../backend/.env') });
 
-const DB_FILE_PATH = path.resolve(__dirname, '../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
 async function reset() {
   const salt = await bcrypt.genSalt(10);

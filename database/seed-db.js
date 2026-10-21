@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
-const DB_FILE_PATH = path.resolve(__dirname, '../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
 // Indian names lists
 const firstNames = [

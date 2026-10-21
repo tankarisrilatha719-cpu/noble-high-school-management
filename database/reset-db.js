@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_FILE_PATH = path.resolve(__dirname, '../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
 function reset() {
   console.log('Starting DB reset process...');

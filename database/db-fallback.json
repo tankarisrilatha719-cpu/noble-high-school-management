@@ -20,5 +20,16 @@
   "holidays": [],
   "exams": [],
   "leaves": [],
-  "hallTickets": []
+  "hallTickets": [],
+  "system": {
+    "academicYear": "2026-2027"
+  },
+  "settingss": [
+    {
+      "$__": {
+        "shardval": {}
+      },
+      "_id": "yum16dd4w6jtfc"
+    }
+  ]
 }

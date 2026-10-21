@@ -1,19 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-require('dotenv').config();
-
-// Load environment configurations (school-config.env)
-const envPaths = [
-  path.resolve(__dirname, '../school-config.env'),
-  path.resolve(__dirname, './school-config.env')
-];
-for (const envPath of envPaths) {
-  if (fs.existsSync(envPath)) {
-    require('dotenv').config({ path: envPath });
-    break;
-  }
-}
+require('dotenv').config({ path: path.resolve(__dirname, '../backend/.env') });
 
 const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
@@ -209,8 +197,8 @@ async function seed() {
     await mongoose.connect(mongoURI, { serverSelectionTimeoutMS: 3000 });
     console.log('Connected to MongoDB. Wiping existing students and seeding 13,000 records...');
     
-    const StudentModel = require('./src/models/Student');
-    const UserModel = require('./src/models/User');
+    const StudentModel = require('../backend/models/Student');
+    const UserModel = require('../backend/models/User');
 
     // Wipe existing students & student users (keep admin users)
     await StudentModel.deleteMany({});

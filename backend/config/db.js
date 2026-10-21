@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const originalModel = mongoose.model;
 const originalConnect = mongoose.connect;
 // Path to the fallback JSON file inside backend folder
-const DB_FILE_PATH = path.resolve(__dirname, '../../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, '../../database/db-fallback.json');
 // Helper to read database file
 function readDbFile() {
   try {
@@ -137,6 +137,8 @@ class MockDocument {
   constructor(modelName, data, schema) {
     this._modelName = modelName;
     this._schema = schema;
+    this.$__ = { shardval: {} };
+    this.$session = () => null;
     
     Object.assign(this, data);
     
@@ -157,6 +159,8 @@ class MockDocument {
     // Run pre-save hooks
     if (this._schema && this._schema._preHooks && this._schema._preHooks['save']) {
       for (const hookFn of this._schema._preHooks['save']) {
+        if (typeof hookFn !== 'function') continue;
+        if (hookFn.name && hookFn.name !== '') continue;
         await new Promise((resolve, reject) => {
           let resolved = false;
           const done = (err) => {
@@ -195,6 +199,7 @@ class MockDocument {
     // Run post-save hooks
     if (this._schema && this._schema._postHooks && this._schema._postHooks['save']) {
       for (const hookFn of this._schema._postHooks['save']) {
+        if (typeof hookFn !== 'function' || (hookFn.name && hookFn.name !== '')) continue;
         hookFn.call(this, this);
       }
     }

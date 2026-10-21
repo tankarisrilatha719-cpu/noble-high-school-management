@@ -4,9 +4,9 @@ const path = require('path');
 const fs = require('fs');
 
 // Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../backend/.env') });
 
-const DB_FILE_PATH = path.resolve(__dirname, '../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
 async function clearDatabase() {
   const uri = process.env.MONGODB_URI;
@@ -91,12 +91,8 @@ async function clearDatabase() {
     hallTickets: []
   };
 
-  const ROOT_DB_PATH = path.resolve(__dirname, '../db-fallback.json');
-  const BACKEND_DB_PATH = path.resolve(__dirname, './db-fallback.json');
-
-  fs.writeFileSync(ROOT_DB_PATH, JSON.stringify(freshDb, null, 2), 'utf8');
-  fs.writeFileSync(BACKEND_DB_PATH, JSON.stringify(freshDb, null, 2), 'utf8');
-  console.log('Local fallback JSON files cleared successfully.');
+  fs.writeFileSync(DB_FILE_PATH, JSON.stringify(freshDb, null, 2), 'utf8');
+  console.log('Local fallback JSON file cleared successfully.');
 
   await mongoose.disconnect();
   console.log('Disconnected from MongoDB.');

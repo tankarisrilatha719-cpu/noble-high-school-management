@@ -17,7 +17,7 @@ const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
 
 // Path to fallback database
-const DB_FILE_PATH = path.resolve(__dirname, '../../db-fallback.json');
+const DB_FILE_PATH = path.resolve(__dirname, '../../database/db-fallback.json');
 
 // General Key-Value Schema for full sync backup inside MongoDB
 const FallbackStoreSchema = new mongoose.Schema({
