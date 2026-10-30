@@ -46,8 +46,8 @@ noble-school-refactored/
 │   ├── utils/
 │   │   ├── emailService.js       # SMTP email & OTP notification service
 │   │   └── ttlStore.js           # Session and verification code store
-│   ├── .env                      # Environment configuration
-│   ├── .env.example
+│   ├── .env                      # Your local settings (never commit this file)
+│   ├── .env.example              # Template listing every setting
 │   ├── package.json
 │   └── server.js                 # Express server entry point (Port 5000)
 ├── database/
@@ -82,16 +82,43 @@ noble-school-refactored/
    ```bash
    npm install
    ```
-3. Start the server:
+3. Copy `.env.example` to `.env` and fill it in. `JWT_SECRET` is required
+   (at least 32 random characters); the server will not start without it.
+   Generate one with:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+   ```
+4. Start the server:
    ```bash
    npm start
    # or for development with auto-reload:
    npm run dev
    ```
-4. Access the portal in your browser at:
+5. Access the portal in your browser at:
    ```
    http://localhost:5000/
    ```
+
+---
+
+### Production settings (Render)
+Set these as environment variables on the hosting service, not in a file:
+`NODE_ENV=production`, `MONGODB_URI`, `JWT_SECRET`, and either `RESEND_API_KEY`
+or `EMAIL_USER` + `EMAIL_APP_PASSWORD` (admin login sends a one-time code by
+email and fails if email is not configured). Online fee payment is enabled
+only when `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are set.
+
+### How access works
+* Visitors can read only public content (posters, gallery, activities, faculty)
+  and submit the admission and Parent Help Desk forms.
+* Students log in with their Login ID and password and receive only their own
+  records.
+* Admins log in with password + CAPTCHA + emailed OTP. Only admins can change
+  school data. Changing admin credentials requires a fresh OTP.
+
+### Cache busting
+`index.html` loads CSS and JS with a `?v=` number. Increase it whenever you
+change `styles.css`, `app.js`, `ui.js` or `chatbot.js` so browsers fetch the new files.
 
 ---
 

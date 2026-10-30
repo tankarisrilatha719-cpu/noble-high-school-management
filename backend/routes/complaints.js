@@ -3,26 +3,7 @@ const router = express.Router();
 const Complaint = require('../models/Complaint');
 const { protect, authorize } = require('../middleware/auth');
 
-// @route   POST /api/complaints
-// @desc    Submit a new complaint (Public or authenticated student)
-// @access  Public
-router.post('/', async (req, res) => {
-  const { id, studentId, visitorName, visitorPhone, subject, description } = req.body;
-
-  try {
-    const complaint = await Complaint.create({
-      id,
-      studentId,
-      visitorName,
-      visitorPhone,
-      subject,
-      description
-    });
-    res.status(201).json({ success: true, data: complaint });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
+// Public complaints are submitted through POST /api/sync/public/complaint.
 
 // @route   GET /api/complaints
 // @desc    Get all complaints

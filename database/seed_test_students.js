@@ -57,7 +57,7 @@ async function seed() {
     loginId: 'admin_noble',
     password: adminSalt,
     role: 'admin',
-    email: 'tankarisrilatha719@gmail.com',
+    email: process.env.EMAIL_USER || '',
     createdAt: new Date().toISOString()
   });
 

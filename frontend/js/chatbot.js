@@ -7,7 +7,7 @@ const BACKEND_URL = localStorage.getItem('nhs_custom_backend_url') ||
       : 'https://noble-high-school-management.onrender.com'));
 let currentLang='en',chatOpen=false,awaitingFeeStudentId=false;
 const T={en:{welcome:"Namaste! 🙏 I'm Noble Mitra, your assistant for Noble High School, Kandukur. How can I help you today?",qr:["Fee Details","Admissions","School Timings","Contact Info","About School"]},te:{welcome:"నమస్తే! 🙏 నేను Noble Mitra, Noble High School సహాయకుడిని. నేను మీకు ఏ విధంగా సహాయం చేయగలను?",qr:["ఫీజు వివరాలు","అడ్మిషన్లు","పాఠశాల సమయాలు","సంప్రదింపు","పాఠశాల గురించి"]},hi:{welcome:"नमस्ते! 🙏 मैं Noble Mitra हूं, Noble High School का सहायक। मैं आपकी कैसे मदद कर सकता हूं?",qr:["फीस विवरण","प्रवेश","स्कूल समय","संपर्क","स्कूल के बारे में"]}};
-const R={en:{fee:"Please enter your **Student ID** to check fee details:",admission:"📋 **Admission Process:**\n\n1️⃣ Visit school OR fill online form on website\n2️⃣ Required documents:\n• Aadhaar Card (Student & Parent)\n• Previous TC & Marks Memo\n• Passport photos (4)\n• Caste Certificate\n• Birth Certificate\n\n📞 +91 90599 92147",timings:"⏰ **School Timings:**\n\n🕗 Opens: 8:00 AM\nKM\n🕓 Closes: 4:00 PM\n\n• Mon-Fri: Full day\n• Saturday: Working (except 2nd Saturday)\n• 2nd Saturday: Holiday\n🌞 Summer Holidays: April 25 to June end",exam:"📝 **Exam Schedule:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• Mid Term Exams\n• Pre-Final Exams\n• Weekend Exams\n\n📊 Results published on website",contact:"📞 **Contact:**\n\n🏫 Noble High School\n📍 Kandukur 'X' Road, Kandukur Mandal, Rangareddy District, Telangana\n📱 +91 90599 92147\n👨💼 Principal: Bairu Kondal Reddy",about:"🏫 **About School:**\n\n✅ Student Information Management\n✅ Fee Payment Tracking\n✅ Academic Reports & Results\n✅ Exam Schedules & Hall Tickets\n✅ Notifications & Announcements\n✅ Parent Communication Portal\n\n📞 +91 90599 92147",notfound:"Student ID not found. Contact school: +91 90599 92147",def:"I can help with:\n• 💰 Fee Details\n• 📋 Admissions\n• ⏰ School Timings\n• 📞 Contact Info\n• 🏫 About School"},te:{fee:"ఫీజు వివరాలు తెలుసుకోవడానికి మీ **Student ID** ఇవ్వండి:",admission:"📋 **అడ్మిషన్ ప్రక్రియ:**\n\n1️⃣ పాఠశాలకు వెళ్ళండి లేదా వెబ్సైట్లో ఆన్లైన్ ఫారం పూరించండి\n2️⃣ అవసరమైన పత్రాలు:\n• ఆధార్ కార్డ్\n• మునుపటి TC & మార్కులు మెమో\n• పాస్పోర్ట్ ఫోటోలు (4)\n• కులధృవీకరణ పత్రం\n\n📞 +91 90599 92147",timings:"⏰ **పాఠశాల సమయాలు:**\n\n🕗 తెరవడం: 8:00 AM\nKM\n🕓 మూయడం: 4:00 PM\n\n• సోమ-శుక్ర: పూర్తి రోజు\n• శనివారం: పని దినం (2వ శనివారం తప్ప)\n🌞 వేసవి సెలవులు: ఏప్రిల్ 25 నుండి జూన్ వరకు",exam:"📝 **పరీక్ష షెడ్యూల్:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• మిడ్ టర్మ్, ప్రీ-ఫైనల్\n• వీకెండ్ పరీక్షలు\n\n📊 ఫలితాలు వెబ్సైట్లో",contact:"📞 **సంప్రదింపు:**\n\n📍 కందుకూర్ 'X' రోడ్, కందుకూర్ మండల్, రంగారెడ్డి జిల్లా\n📱 +91 90599 92147\n👨💼 ప్రిన్సిపల్: Bairu Kondal Reddy",about:"🏫 **Noble High School సేవలు:**\n\n✅ విద్యార్థి సమాచార నిర్వహణ\n✅ ఫీజు చెల్లింపు ట్రాకింగ్\n✅ అకాడమిక్ రిపోర్ట్లు\n✅ పరీక్ష షెడ్యూల్లు\n\n📞 +91 90599 92147",notfound:"Student ID కనుగొనబడలేదు. పాఠశాలను సంప్రదించండి: +91 90599 92147",def:"నేను సహాయం చేయగలను:\n• 💰 ఫీజు వివరాలు\n• 📋 అడ్మిషన్లు\n• ⏰ పాఠశాల సమయాలు"},hi:{fee:"फीस विवरण के लिए **Student ID** दर्ज करें:",admission:"📋 **प्रवेश प्रक्रिया:**\n\n1️⃣ स्कूल जाएं या वेबसाइट पर फॉर्म भरें\n2️⃣ आवश्यक दस्तावेज:\n• आधार कार्ड\n• पिछली TC और मार्क्स मेमो\n• पासपोर्ट फोटो (4)\n• जाति प्रमाण पत्र\n\n📞 +91 90599 92147",timings:"⏰ **स्कूल समय:**\n\n🕗 खुलने का: 8:00 AM\nKM\n🕓 बंद होने का: 4:00 PM\n\n• सोम-शुक्र: पूरा दिन\n• शनिवार: कार्य दिवस (दूसरे शनिवार को छोड़कर)\n🌞 गर्मी छुट्टियां: 25 अप्रैल से जून तक",exam:"📝 **परीक्षा अनुसूची:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• Mid Term, Pre-Final\n• Weekend परीक्षाएं\n\n📊 परिणाम वेबसाइट पर",contact:"📞 **संपर्क:**\n\n📍 कंदुकूर 'X' रोड, रंगारेड्डी जिला, तेलंगाना\n📱 +91 90599 92147\n👨💼 प्रिंसिपल: Bairu Kondal Reddy",about:"🏫 **Noble High School सेवाएं:**\n\n✅ छात्र जानकारी प्रबंधन\n✅ फीस भुगतान ट्रैकिंग\n✅ परीक्षा अनुसूची\n\n📞 +91 90599 92147",notfound:"Student ID नहीं मिला। स्कूल से संपर्क करें: +91 90599 92147",def:"मैं मदद कर सकता हूं:\n• 💰 फीस विवरण\n• 📋 प्रवेश\n• ⏰ स्कूल समय"}};
+const R={en:{fee:"Please enter your **Student ID** to check fee details:",admission:"📋 **Admission Process:**\n\n1️⃣ Visit school OR fill online form on website\n2️⃣ Required documents:\n• Aadhaar Card (Student & Parent)\n• Previous TC & Marks Memo\n• Passport photos (4)\n• Caste Certificate\n• Birth Certificate\n\n📞 +91 90599 92147",timings:"⏰ **School Timings:**\n\n🕗 Opens: 8:00 AM\n🕓 Closes: 4:00 PM\n\n• Mon-Fri: Full day\n• Saturday: Working (except 2nd Saturday)\n• 2nd Saturday: Holiday\n🌞 Summer Holidays: April 25 to June end",exam:"📝 **Exam Schedule:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• Mid Term Exams\n• Pre-Final Exams\n• Weekend Exams\n\n📊 Results published on website",contact:"📞 **Contact:**\n\n🏫 Noble High School\n📍 Kandukur 'X' Road, Kandukur Mandal, Rangareddy District, Telangana\n📱 +91 90599 92147\n👨💼 Principal: Bairu Kondal Reddy",about:"🏫 **About Noble High School:**\n\n✅ Serving Kandukur since 1995\n✅ Classes from Nursery, LKG and UKG up to Class 10\n✅ Online admission form on the website\n✅ Student Portal: report cards, hall tickets, fees and notices\n👨‍💼 Principal: Bairu Kondal Reddy\n\n📞 +91 90599 92147",notfound:"Student ID not found. Contact school: +91 90599 92147",loginFirst:"🔒 Fee details are private. Please log in to the **Student Portal** first, then ask me again.",ownOnly:"🔒 You can only view fee details for your own Student ID.",def:"I can help with:\n• 💰 Fee Details\n• 📋 Admissions\n• ⏰ School Timings\n• 📞 Contact Info\n• 🏫 About School"},te:{fee:"ఫీజు వివరాలు తెలుసుకోవడానికి మీ **Student ID** ఇవ్వండి:",admission:"📋 **అడ్మిషన్ ప్రక్రియ:**\n\n1️⃣ పాఠశాలకు వెళ్ళండి లేదా వెబ్సైట్లో ఆన్లైన్ ఫారం పూరించండి\n2️⃣ అవసరమైన పత్రాలు:\n• ఆధార్ కార్డ్\n• మునుపటి TC & మార్కులు మెమో\n• పాస్పోర్ట్ ఫోటోలు (4)\n• కులధృవీకరణ పత్రం\n\n📞 +91 90599 92147",timings:"⏰ **పాఠశాల సమయాలు:**\n\n🕗 తెరవడం: 8:00 AM\n🕓 మూయడం: 4:00 PM\n\n• సోమ-శుక్ర: పూర్తి రోజు\n• శనివారం: పని దినం (2వ శనివారం తప్ప)\n🌞 వేసవి సెలవులు: ఏప్రిల్ 25 నుండి జూన్ వరకు",exam:"📝 **పరీక్ష షెడ్యూల్:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• మిడ్ టర్మ్, ప్రీ-ఫైనల్\n• వీకెండ్ పరీక్షలు\n\n📊 ఫలితాలు వెబ్సైట్లో",contact:"📞 **సంప్రదింపు:**\n\n📍 కందుకూర్ 'X' రోడ్, కందుకూర్ మండల్, రంగారెడ్డి జిల్లా\n📱 +91 90599 92147\n👨💼 ప్రిన్సిపల్: Bairu Kondal Reddy",about:"🏫 **Noble High School సేవలు:**\n\n✅ విద్యార్థి సమాచార నిర్వహణ\n✅ ఫీజు చెల్లింపు ట్రాకింగ్\n✅ అకాడమిక్ రిపోర్ట్లు\n✅ పరీక్ష షెడ్యూల్లు\n\n📞 +91 90599 92147",notfound:"Student ID కనుగొనబడలేదు. పాఠశాలను సంప్రదించండి: +91 90599 92147",loginFirst:"🔒 ఫీజు వివరాలు ప్రైవేట్. దయచేసి ముందుగా **Student Portal**‌లో లాగిన్ అవ్వండి.",ownOnly:"🔒 మీ స్వంత Student ID ఫీజు వివరాలు మాత్రమే చూడగలరు.",def:"నేను సహాయం చేయగలను:\n• 💰 ఫీజు వివరాలు\n• 📋 అడ్మిషన్లు\n• ⏰ పాఠశాల సమయాలు"},hi:{fee:"फीस विवरण के लिए **Student ID** दर्ज करें:",admission:"📋 **प्रवेश प्रक्रिया:**\n\n1️⃣ स्कूल जाएं या वेबसाइट पर फॉर्म भरें\n2️⃣ आवश्यक दस्तावेज:\n• आधार कार्ड\n• पिछली TC और मार्क्स मेमो\n• पासपोर्ट फोटो (4)\n• जाति प्रमाण पत्र\n\n📞 +91 90599 92147",timings:"⏰ **स्कूल समय:**\n\n🕗 खुलने का: 8:00 AM\n🕓 बंद होने का: 4:00 PM\n\n• सोम-शुक्र: पूरा दिन\n• शनिवार: कार्य दिवस (दूसरे शनिवार को छोड़कर)\n🌞 गर्मी छुट्टियां: 25 अप्रैल से जून तक",exam:"📝 **परीक्षा अनुसूची:**\n\n• FA1, FA2, FA3, FA4\n• SA1, SA2\n• Mid Term, Pre-Final\n• Weekend परीक्षाएं\n\n📊 परिणाम वेबसाइट पर",contact:"📞 **संपर्क:**\n\n📍 कंदुकूर 'X' रोड, रंगारेड्डी जिला, तेलंगाना\n📱 +91 90599 92147\n👨💼 प्रिंसिपल: Bairu Kondal Reddy",about:"🏫 **Noble High School सेवाएं:**\n\n✅ छात्र जानकारी प्रबंधन\n✅ फीस भुगतान ट्रैकिंग\n✅ परीक्षा अनुसूची\n\n📞 +91 90599 92147",notfound:"Student ID नहीं मिला। स्कूल से संपर्क करें: +91 90599 92147",loginFirst:"🔒 फीस विवरण निजी है। कृपया पहले **Student Portal** में लॉगिन करें।",ownOnly:"🔒 आप केवल अपनी Student ID का फीस विवरण देख सकते हैं।",def:"मैं मदद कर सकता हूं:\n• 💰 फीस विवरण\n• 📋 प्रवेश\n• ⏰ स्कूल समय"}};
 
 // Load fonts dynamically
 const fontLink=document.createElement('link');
@@ -18,10 +18,12 @@ document.head.appendChild(fontLink);
 // Inject styles
 const style=document.createElement('style');
 style.textContent=`
-#nm-toggle{position:fixed;bottom:24px;right:24px;width:64px;height:64px;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:99999;transition:transform 0.2s;}
+#nm-toggle{position:fixed;bottom:24px;right:24px;width:64px;height:64px;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1500;transition:transform 0.2s;padding:0;}
+@media (max-width:600px){#nm-toggle{width:52px;height:52px;bottom:16px;right:16px}#nm-toggle svg{width:52px;height:52px}#nm-window{right:16px;bottom:80px}}
+@media (prefers-reduced-motion:reduce){#nm-toggle *{animation:none!important}}
 #nm-toggle:hover{transform:scale(1.08);}
 #nm-badge{position:absolute;top:-3px;right:-3px;background:#e53935;color:#fff;font-size:9px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;}
-#nm-window{position:fixed;bottom:100px;right:24px;width:360px;max-width:calc(100vw - 32px);height:540px;max-height:calc(100vh - 120px);background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(26,58,107,0.25);display:flex;flex-direction:column;overflow:hidden;z-index:99998;transform:scale(0.95) translateY(20px);opacity:0;pointer-events:none;transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);}
+#nm-window{position:fixed;bottom:100px;right:24px;width:360px;max-width:calc(100vw - 32px);height:540px;max-height:calc(100vh - 120px);background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(26,58,107,0.25);display:flex;flex-direction:column;overflow:hidden;z-index:1499;transform:scale(0.95) translateY(20px);opacity:0;pointer-events:none;transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);}
 #nm-window.nm-open{transform:scale(1) translateY(0);opacity:1;pointer-events:all;}
 .nm-header{background:#1a3a6b;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
 .nm-avatar{width:40px;height:40px;border-radius:50%;background:#c8a951;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid #f0d98a;}
@@ -64,8 +66,12 @@ style.textContent=`
 document.head.appendChild(style);
 
 // Create HTML
-const toggle=document.createElement('div');
+const toggle=document.createElement('button');
+toggle.type='button';
 toggle.id='nm-toggle';
+toggle.setAttribute('aria-label','Open the Noble Mitra chat assistant');
+toggle.setAttribute('aria-expanded','false');
+toggle.setAttribute('aria-controls','nm-window');
 toggle.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" style="overflow:visible;">  <style>    .nm-halo {      animation: haloPulse 2s ease-in-out infinite alternate;    }    .nm-robot-group {      animation: floatMotion 2s ease-in-out infinite alternate;    }    .nm-eye-l {      animation: blink 3s infinite;      transform-origin: 24px 27px;    }    .nm-eye-r {      animation: blink 3s infinite;      transform-origin: 40px 27px;    }    .nm-antenna-glow {      animation: glowPulse 1.5s ease-in-out infinite alternate;      transform-origin: 32px 9px;    }    .nm-mouth-glow {      animation: flicker 0.3s infinite;    }    @keyframes floatMotion {      0% { transform: translateY(0px); }      100% { transform: translateY(-2px); }    }    @keyframes blink {      0%, 90%, 100% { transform: scaleY(1); }      95% { transform: scaleY(0.1); }    }    @keyframes glowPulse {      0% { r: 3px; opacity: 0.4; }      100% { r: 7px; opacity: 1; }    }    @keyframes haloPulse {      0% { filter: drop-shadow(0 0 2px rgba(200, 169, 81, 0.4)); }      100% { filter: drop-shadow(0 0 6px rgba(200, 169, 81, 0.8)); }    }    @keyframes flicker {      0%, 100% { opacity: 0.9; }      50% { opacity: 0.4; }    }  </style>  <g class="nm-halo">    <g class="nm-robot-group">      <!-- Antenna -->      <rect x="31" y="11" width="2" height="7" fill="#c8a951" />      <circle cx="32" cy="9" r="2.5" fill="#c8a951" />      <circle class="nm-antenna-glow" cx="32" cy="9" r="5" fill="#c8a951" opacity="0.6" />            <!-- Ear Bolts -->      <rect x="11" y="27" width="3" height="6" rx="1" fill="#c8a951" />      <rect x="50" y="27" width="3" height="6" rx="1" fill="#c8a951" />            <!-- Neck -->      <rect x="28" y="42" width="8" height="4" fill="#c8a951" />            <!-- Body/Chest -->      <path d="M 18,45 L 46,45 L 49,58 L 15,58 Z" fill="#1a3a6b" stroke="#c8a951" stroke-width="1.5" />      <rect x="23" y="49" width="18" height="7" rx="1" fill="#c8a951" />      <text x="32" y="54" font-family="\'Poppins\', \'Arial\', sans-serif" font-size="4.5" font-weight="bold" fill="#1a3a6b" text-anchor="middle">NOBLE</text>            <!-- Head -->      <rect x="14" y="18" width="36" height="25" rx="5" ry="5" fill="#1a3a6b" stroke="#c8a951" stroke-width="2" />            <!-- Visor -->      <rect x="18" y="22" width="28" height="11" rx="2.5" ry="2.5" fill="#0d1f3d" />            <!-- Eyes -->      <circle class="nm-eye-l" cx="24" cy="27" r="3" fill="#c8a951" />      <circle class="nm-eye-r" cx="40" cy="27" r="3" fill="#c8a951" />            <!-- Mouth Panel -->      <g class="nm-mouth-glow">        <rect x="22" y="36" width="20" height="4.5" rx="1" fill="#c8a951" />        <!-- Teeth (navy rectangles) -->        <rect x="25" y="37" width="2" height="2.5" fill="#1a3a6b" />        <rect x="31" y="37" width="2" height="2.5" fill="#1a3a6b" />        <rect x="37" y="37" width="2" height="2.5" fill="#1a3a6b" />      </g>    </g>  </g></svg><div id="nm-badge">1</div>';
 toggle.onclick=toggleNM;
 
@@ -75,7 +81,7 @@ win.innerHTML=`
 <div class="nm-header">
   <div class="nm-avatar">🤖</div>
   <div><div class="nm-title">Noble Mitra</div><div class="nm-sub"><span class="nm-dot"></span>Noble High School Assistant</div></div>
-  <button class="nm-close" onclick="document.getElementById('nm-window').classList.remove('nm-open');window._nmOpen=false;">✕</button>
+  <button type="button" class="nm-close" aria-label="Close chat" onclick="document.getElementById('nm-window').classList.remove('nm-open');window._nmOpen=false;document.getElementById('nm-toggle').setAttribute('aria-expanded','false');">✕</button>
 </div>
 <div class="nm-lang">
   <button class="nm-lb nm-active" onclick="setNMLang('en',this)">English</button>
@@ -99,6 +105,9 @@ function toggleNM(){
   window._nmOpen=!window._nmOpen;
   document.getElementById('nm-window').classList.toggle('nm-open',window._nmOpen);
   document.getElementById('nm-badge').style.display='none';
+  const t=document.getElementById('nm-toggle');
+  t.setAttribute('aria-expanded',String(window._nmOpen));
+  t.setAttribute('aria-label',window._nmOpen?'Close the chat assistant':'Open the Noble Mitra chat assistant');
 }
 
 window.setNMLang=function(lang,btn){
@@ -141,23 +150,21 @@ function setNMQR(replies){
   replies.forEach(r=>{const b=document.createElement('button');b.className='nm-qrb';b.textContent=r;b.onclick=()=>{addNMMsg(r,'user');processNM(r.toLowerCase());};c.appendChild(b);});
 }
 
+// Fee details are private, so they are only shown to the logged-in student
+// for their own ID, using the data already loaded for the student portal.
 async function fetchNMFee(id){
-  try{
-    const res=await fetch(`${BACKEND_URL}/api/fees/public-info/${id.trim()}`);
-    const data=await res.json();
-    if(data.success&&data.data){
-      const { student, payments } = data.data;
-      let msg=`📊 **Fee Details for ${student.name}:**\n\n🎓 Class: ${student.className}-${student.section}\n`;
-      let paid=payments.reduce((a,f)=>a+(f.amount||0),0);
-      msg+=`💰 Total Paid: ₹${paid.toLocaleString()}\n`;
-      if(student.totalFee){
-        const due=student.totalFee-paid;
-        msg+=`📌 Total Fee: ₹${student.totalFee.toLocaleString()}\n${due>0?'⚠️':'✅'} Due: ₹${Math.max(0,due).toLocaleString()}`;
-      }
-      return msg;
-    }
-    return R[currentLang].notfound;
-  }catch(e){return`Unable to fetch. Contact school:\n📞 +91 90599 92147`;}
+  const student = (typeof currentStudent !== 'undefined') ? currentStudent : null;
+  if(!student) return R[currentLang].loginFirst;
+  const wanted = id.trim().toLowerCase();
+  if(wanted !== String(student.id).toLowerCase() && wanted !== String(student.loginId).toLowerCase()) return R[currentLang].ownOnly;
+  const payments=(DB.get('fees')||[]).filter(f=>f.studentId===student.id);
+  const paid=payments.reduce((a,f)=>a+(f.amount||0),0);
+  let msg=`📊 **Fee Details for ${student.name}:**\n\n🎓 Class: ${student.className}-${student.section}\n💰 Total Paid: ₹${paid.toLocaleString()}\n`;
+  if(student.totalFee){
+    const due=student.totalFee-paid;
+    msg+=`📌 Total Fee: ₹${student.totalFee.toLocaleString()}\n${due>0?'⚠️':'✅'} Due: ₹${Math.max(0,due).toLocaleString()}`;
+  }
+  return msg;
 }
 
 function processNM(text){

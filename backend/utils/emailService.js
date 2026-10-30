@@ -2,11 +2,6 @@ const https = require('https');
 const nodemailer = require('nodemailer');
 
 const sendOTPEmail = async (toEmail, otp) => {
-  // Always log OTP to console for developer/localhost bypass
-  console.log(`\n======================================================`);
-  console.log(`[DEVELOPER OTP BYPASS] Generated OTP for Admin: ${otp}`);
-  console.log(`======================================================\n`);
-
   const apiKey = process.env.RESEND_API_KEY;
   const smtpUser = process.env.EMAIL_USER;
   const smtpPass = process.env.EMAIL_APP_PASSWORD;
@@ -118,10 +113,12 @@ const sendOTPEmail = async (toEmail, otp) => {
     }
   }
 
-  // 3. Fallback: If both Resend and SMTP failed (or are not configured), we do NOT throw an error.
-  // We log it and let the developer log in using the printed OTP.
-  console.log(`\n[OTP BYPASS ACTIVE] Could not send OTP email to ${toEmail}.`);
-  console.log(`Please use the OTP displayed above in the terminal console to complete the login on localhost.\n`);
+  // 3. Neither Resend nor SMTP delivered the email. In development the OTP is
+  // printed to the server console instead; in production this is an error.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Email delivery is not configured');
+  }
+  console.log(`[DEV] Could not email the OTP to ${toEmail}; use the OTP printed above.`);
 };
 
 module.exports = { sendOTPEmail };

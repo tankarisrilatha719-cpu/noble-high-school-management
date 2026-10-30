@@ -9,8 +9,14 @@ dotenv.config({ path: path.resolve(__dirname, '../backend/.env') });
 const DB_FILE_PATH = path.resolve(__dirname, './db-fallback.json');
 
 async function reset() {
+  // Usage: ADMIN_NEW_PASSWORD='...' node database/reset-admin-password.js
+  const newPassword = process.env.ADMIN_NEW_PASSWORD;
+  if (!newPassword || newPassword.length < 8) {
+    console.error('Set ADMIN_NEW_PASSWORD (at least 8 characters) before running this script.');
+    process.exit(1);
+  }
   const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash('noble2026password', salt);
+  const passwordHash = await bcrypt.hash(newPassword, salt);
   
   console.log('--- RESETTING LOCAL DB FALLBACK ---');
   if (fs.existsSync(DB_FILE_PATH)) {
@@ -28,7 +34,7 @@ async function reset() {
           loginId: 'admin_noble',
           password: passwordHash,
           role: 'admin',
-          email: 'tankarisrilatha719@gmail.com',
+          email: process.env.EMAIL_USER || '',
           createdAt: new Date().toISOString()
         });
         console.log('Created admin_noble user in db-fallback.json');
@@ -72,7 +78,7 @@ async function reset() {
         loginId: 'admin_noble',
         password: passwordHash,
         role: 'admin',
-        email: 'tankarisrilatha719@gmail.com'
+        email: process.env.EMAIL_USER || ''
       });
       console.log('Created admin_noble user in MongoDB database.');
     }

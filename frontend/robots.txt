@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /api/
+
+Sitemap: https://noble-high-school-management.onrender.com/sitemap.xml

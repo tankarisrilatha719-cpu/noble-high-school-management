@@ -18,7 +18,7 @@ async function get(namespace, key) {
   try {
     const doc = await TtlStore.findOne({ namespace, key });
     if (!doc) return null;
-    if (doc.expiresAt < new Date()) { await TtlStore.deleteOne({ namespace, key }); return null; }
+    if (new Date(doc.expiresAt) < new Date()) { await TtlStore.deleteOne({ namespace, key }); return null; }
     return doc.value;
   } catch (err) { console.error('[ttlStore] get error:', err.message); return null; }
 }

@@ -71,7 +71,7 @@ async function clearDatabase() {
     loginId: "admin_noble",
     password: "$2a$10$olgkbZ3mqgTFvD7GF2Az3.7w/lhVzQdYBo0pkrV5veZFzNTCqq7Y6",
     role: "admin",
-    email: "tankarisrilatha719@gmail.com",
+    email: process.env.EMAIL_USER || "",
     createdAt: new Date().toISOString()
   };
 

@@ -270,6 +270,15 @@ class MockModel {
       const doc = new MockDocument(this.name, updatedDoc, this.schema);
       return doc;
     }
+    if (options.upsert) {
+      const base = {};
+      Object.keys(query || {}).forEach(k => {
+        if (!k.startsWith('$') && (query[k] === null || typeof query[k] !== 'object')) base[k] = query[k];
+      });
+      const doc = new MockDocument(this.name, { ...base, ...((update && update.$set) || update || {}) }, this.schema);
+      await doc.save();
+      return doc;
+    }
     return null;
   }
   async findByIdAndUpdate(id, update, options = {}) {
@@ -292,6 +301,10 @@ class MockModel {
   }
   async findByIdAndDelete(id) {
     return this.findOneAndDelete({ _id: id });
+  }
+  async deleteOne(query = {}) {
+    const removed = await this.findOneAndDelete(query);
+    return { deletedCount: removed ? 1 : 0 };
   }
   async deleteMany(query = {}) {
     const dbData = readDbFile();
@@ -324,32 +337,29 @@ mongoose.Schema.prototype.post = function(name, fn) {
   this._postHooks[name].push(fn);
   return originalPost.apply(this, arguments);
 };
-// Seed default admin and test student
+// Create the first admin account when none exists. The password comes from
+// ADMIN_INITIAL_PASSWORD, or a random one is generated and printed once.
 async function seedDefaultAdmin() {
   const dbData = readDbFile();
   if (!dbData.users) dbData.users = [];
-  
-  const adminExists = dbData.users.some(u => u.loginId === 'admin_noble');
-  if (!adminExists) {
-    console.log('[DATABASE FALLBACK] Seeding default admin_noble user...');
+
+  if (!dbData.users.some(u => u.role === 'admin')) {
+    const password = process.env.ADMIN_INITIAL_PASSWORD || require('crypto').randomBytes(12).toString('base64url');
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('noble2026password', salt);
-    
     dbData.users.push({
       _id: 'admin_noble_id',
       loginId: 'admin_noble',
-      password: passwordHash,
+      password: await bcrypt.hash(password, salt),
       role: 'admin',
-      email: process.env.EMAIL_USER || 'tankarisrilatha719@gmail.com',
+      email: process.env.EMAIL_USER || '',
       createdAt: new Date().toISOString()
     });
-    
     writeDbFile(dbData);
-    console.log('[DATABASE FALLBACK] Default admin_noble seeded successfully.');
+    console.log('[DATABASE FALLBACK] Created admin "admin_noble".');
+    if (!process.env.ADMIN_INITIAL_PASSWORD) {
+      console.log(`[DATABASE FALLBACK] Temporary password: ${password}  (change it after first login)`);
+    }
   }
-  // Seed default test student "NHS001"
-  if (!dbData.students) dbData.students = [];
-  // Disabled default student seeding for clean installation.
 }
 const mockModels = new Map();
 mongoose.model = function(name, schema) {
@@ -387,7 +397,9 @@ mongoose.model = function(name, schema) {
 };
 mongoose.connect = async function(uri, options) {
   try {
-    console.log(`[DATABASE] Connecting to MongoDB: ${uri}...`);
+    // Never log the username/password part of the connection string.
+    const safeUri = String(uri).replace(/\/\/[^@/]*@/, '//<credentials>@').split('?')[0];
+    console.log(`[DATABASE] Connecting to MongoDB at ${safeUri}...`);
     const conn = await originalConnect.call(mongoose, uri, {
       ...options,
       serverSelectionTimeoutMS: 3000 // 3s timeout

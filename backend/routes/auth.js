@@ -1,49 +1,64 @@
 const express = require('express');
 const router  = express.Router();
+const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const svgCaptcha = require('svg-captcha');
 const User    = require('../models/User');
-const Student = require('../models/Student');
 const { protect, authorize } = require('../middleware/auth');
 const { sendOTPEmail } = require('../utils/emailService');
-
-// FIX #3: File-backed TTL store instead of plain in-memory Maps.
-//         CAPTCHA and OTP entries now survive server restarts.
 const ttlStore = require('../utils/ttlStore');
-ttlStore.purgeAll(); // clean up stale entries from previous runs on startup
+const studentPassword = require('../utils/studentPassword');
+const { readKey } = require('./sync');
 
-// Helper to generate unique identifiers
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const FIVE_MIN = 5 * 60 * 1000;
+const randomId = () => crypto.randomBytes(16).toString('hex');
+const randomOtp = () => String(crypto.randomInt(100000, 1000000));
 
-// Generate JWT token helper
-const generateToken = (id) => {
-  // FIX #2: JWT_SECRET must be set — no hardcoded fallback.
-  //         Server will have already exited at startup if it's missing.
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '24h'
-  });
-};
+const sessionToken = (payload) =>
+  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE || '12h' });
+
+const maskEmail = (email) => String(email || '').replace(/(.{3})(.*)(@.*)/, '$1***$3');
+
+// Never print OTPs in production logs.
+function logDevOtp(label, otp) {
+  if (process.env.NODE_ENV !== 'production') console.log(`[DEV] ${label} OTP: ${otp}`);
+}
+
+async function sendOtp(user, otp, label) {
+  logDevOtp(label, otp);
+  try {
+    await sendOTPEmail(user.email || process.env.EMAIL_USER, otp);
+  } catch (err) {
+    console.error('[EMAIL ERROR] Failed to send OTP email:', err.message);
+  }
+}
+
+// Limit attempts per IP (and per login ID when given) inside a time window.
+const attempts = new Map();
+function loginLimiter(limit, windowMs) {
+  return (req, res, next) => {
+    const id = String((req.body && req.body.loginId) || '').toLowerCase();
+    const key = req.path + '|' + req.ip + '|' + id;
+    const now = Date.now();
+    const recent = (attempts.get(key) || []).filter(t => now - t < windowMs);
+    if (recent.length >= limit) {
+      return res.status(429).json({ success: false, message: 'Too many attempts. Please wait 15 minutes and try again.' });
+    }
+    recent.push(now);
+    attempts.set(key, recent);
+    next();
+  };
+}
+const limitLogin = loginLimiter(10, 15 * 60 * 1000);
 
 // @route   GET /api/auth/captcha
-// @desc    Generate a dynamic SVG CAPTCHA
 // @access  Public
-router.get('/captcha', (req, res) => {
+router.get('/captcha', async (req, res) => {
   const captcha = svgCaptcha.create({
-    size: 6,
-    noise: 4,
-    color: true,
-    background: '#f1f5f9',
-    width: 180,
-    height: 50,
-    fontSize: 38
+    size: 6, noise: 4, color: true, ignoreChars: '0oO1ilI', background: '#f1f5f9', width: 180, height: 50, fontSize: 38
   });
-
-  const captchaId = generateId();
-  const TTL_5_MIN = 5 * 60 * 1000;
-
-  // FIX #3: Persist to file instead of in-memory Map
-  ttlStore.set('captcha', captchaId, captcha.text, TTL_5_MIN);
-
+  const captchaId = randomId();
+  await ttlStore.set('captcha', captchaId, captcha.text, FIVE_MIN);
   res.json({
     success: true,
     captchaId,
@@ -52,291 +67,205 @@ router.get('/captcha', (req, res) => {
 });
 
 // @route   POST /api/auth/register-admin
-// @desc    Register a new admin (Setup utility)
-// @access  Public (Lock down in production)
+// @desc    One-time setup: only works while no admin account exists.
 router.post('/register-admin', async (req, res) => {
   const { loginId, password, email } = req.body;
   try {
-    let user = await User.findOne({ loginId });
-    if (user) {
-      return res.status(400).json({ success: false, message: 'Admin user already exists' });
+    const admins = await User.find({ role: 'admin' });
+    if (admins.length > 0) {
+      return res.status(403).json({ success: false, message: 'An admin account already exists.' });
     }
-    user = await User.create({
-      loginId,
-      password,
-      role: 'admin',
-      email: email || process.env.EMAIL_USER
-    });
-    const token = generateToken(user._id);
-    res.status(201).json({
-      success: true,
-      token,
-      user: { id: user._id, loginId: user.loginId, role: user.role, email: user.email }
-    });
+    if (!loginId || !password || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Login ID and a password of at least 8 characters are required.' });
+    }
+    await User.create({ loginId, password, role: 'admin', email: email || process.env.EMAIL_USER });
+    res.status(201).json({ success: true, message: 'Admin account created. Please log in.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Could not create admin.' });
   }
 });
 
 // @route   POST /api/auth/login
-// @desc    Authenticate User & get token or send OTP for admin
-// @access  Public
-router.post('/login', async (req, res) => {
+// @desc    Admin step 1: CAPTCHA + password, then an OTP is emailed.
+router.post('/login', limitLogin, async (req, res) => {
   const { loginId, password, captchaId, captcha } = req.body;
   try {
-    const user = await User.findOne({ loginId });
-    if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-
-    if (user.role === 'admin') {
-      // 1. CAPTCHA check
-      if (!captchaId || !captcha) {
-        return res.status(400).json({ success: false, message: 'Verification Code (CAPTCHA) is required for admin access' });
-      }
-
-      // FIX #3: Read from persistent store instead of in-memory Map
-      const storedText = ttlStore.get('captcha', captchaId);
-      if (!storedText) {
-        return res.status(400).json({ success: false, message: 'CAPTCHA code expired. Please refresh the verification code.' });
-      }
-      if (storedText.toLowerCase() !== captcha.trim().toLowerCase()) {
-        return res.status(400).json({ success: false, message: 'Incorrect Verification Code. Please try again.' });
-      }
-      ttlStore.del('captcha', captchaId); // one-time use
-
-      // 2. Generate 6-digit OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const TTL_5_MIN = 5 * 60 * 1000;
-
-      // FIX #3: Persist OTP to file
-      ttlStore.set('otp', loginId, otp, TTL_5_MIN);
-
-      const adminEmail = user.email || process.env.EMAIL_USER;
-      console.log(`\n======================================================`);
-      console.log(`[DEVELOPER OTP BYPASS] Generated OTP for Admin: ${otp}`);
-      console.log(`======================================================\n`);
-
-      try {
-        await sendOTPEmail(adminEmail, otp);
-      } catch (emailErr) {
-        console.error('[EMAIL ERROR] Failed to send OTP email via SMTP:', emailErr.message);
-        console.log('[DEVELOPER BYPASS] Use the OTP printed above to log in.');
-      }
-
-      const maskedEmail = adminEmail.replace(/(.{3})(.*)(@.*)/, '$1***$3');
-      return res.json({
-        success: true,
-        requireOTP: true,
-        loginId,
-        message: `A verification code (OTP) has been sent to your registered email (${maskedEmail})`
-      });
+    if (!captchaId || !captcha) {
+      return res.status(400).json({ success: false, message: 'Please enter the verification code (CAPTCHA).' });
+    }
+    const storedText = await ttlStore.get('captcha', captchaId);
+    await ttlStore.del('captcha', captchaId); // one attempt per CAPTCHA
+    if (!storedText) {
+      return res.status(400).json({ success: false, message: 'The verification code expired. Please try the new one.', captchaExpired: true });
+    }
+    if (storedText !== String(captcha).trim()) {
+      return res.status(400).json({ success: false, message: 'Incorrect verification code. Please try again.' });
     }
 
-    // Student login — direct, no 2FA
-    const token = generateToken(user._id);
-    const studentDetails = await Student.findOne({ loginId: user.loginId });
+    const user = await User.findOne({ loginId: String(loginId || '') });
+    if (!user || user.role !== 'admin' || !(await user.matchPassword(String(password || '')))) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials. Please check User ID and Password.' });
+    }
+
+    const otp = randomOtp();
+    await ttlStore.set('otp', user.loginId, otp, FIVE_MIN);
+    await ttlStore.set('otp-pending', user.loginId, '1', 3 * FIVE_MIN);
+    await sendOtp(user, otp, 'Admin login');
+
     res.json({
       success: true,
-      token,
-      user: { id: user._id, loginId: user.loginId, role: user.role, studentInfo: studentDetails }
+      requireOTP: true,
+      loginId: user.loginId,
+      message: `A verification code (OTP) has been sent to your registered email (${maskEmail(user.email || process.env.EMAIL_USER)}).`
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
+  }
+});
+
+// @route   POST /api/auth/resend-otp
+// @desc    Admin: resend the login OTP. Only works while a login OTP is pending.
+router.post('/resend-otp', limitLogin, async (req, res) => {
+  const loginId = String(req.body.loginId || '');
+  try {
+    const pending = await ttlStore.get('otp-pending', loginId);
+    const user = pending ? await User.findOne({ loginId }) : null;
+    if (!user) return res.status(400).json({ success: false, message: 'Please log in again.' });
+    const otp = randomOtp();
+    await ttlStore.set('otp', loginId, otp, FIVE_MIN);
+    await sendOtp(user, otp, 'Admin login (resend)');
+    res.json({ success: true, message: 'A new verification code has been sent.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Could not resend the code.' });
   }
 });
 
 // @route   POST /api/auth/verify-otp
-// @desc    Verify OTP for admin and issue session token
-// @access  Public
-router.post('/verify-otp', async (req, res) => {
-  const { loginId, otp } = req.body;
+// @desc    Admin step 2: OTP -> session token
+router.post('/verify-otp', limitLogin, async (req, res) => {
+  const loginId = String(req.body.loginId || '');
+  const otp = String(req.body.otp || '').trim();
   try {
     if (!loginId || !otp) {
-      return res.status(400).json({ success: false, message: 'Username and verification code are required.' });
+      return res.status(400).json({ success: false, message: 'Please enter the 6-digit verification code.' });
     }
-
-    // FIX #3: Read from persistent store
-    const storedOtp = ttlStore.get('otp', loginId);
+    const storedOtp = await ttlStore.get('otp', loginId);
     if (!storedOtp) {
-      return res.status(400).json({ success: false, message: 'Verification code expired or not found. Please log in again.' });
+      return res.status(400).json({ success: false, message: 'The verification code expired. Please click Resend OTP.' });
     }
-    if (storedOtp !== otp.trim()) {
+    if (storedOtp !== otp) {
       return res.status(400).json({ success: false, message: 'Incorrect verification code. Please try again.' });
     }
-
-    ttlStore.del('otp', loginId); // one-time use
+    await ttlStore.del('otp', loginId);
+    await ttlStore.del('otp-pending', loginId);
 
     const user = await User.findOne({ loginId });
-    if (!user) return res.status(404).json({ success: false, message: 'Admin user not found' });
+    if (!user || user.role !== 'admin') return res.status(404).json({ success: false, message: 'Admin user not found' });
 
-    const token = generateToken(user._id);
-    res.json({
-      success: true,
-      token,
-      user: { id: user._id, loginId: user.loginId, role: user.role }
-    });
+    const token = sessionToken({ id: String(user._id), role: 'admin', loginId: user.loginId });
+    res.json({ success: true, token, user: { loginId: user.loginId, role: 'admin' } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Verification failed. Please try again.' });
+  }
+});
+
+// @route   POST /api/auth/student-login
+router.post('/student-login', limitLogin, async (req, res) => {
+  const loginId = String(req.body.loginId || '').trim();
+  const password = String(req.body.password || '');
+  try {
+    if (!loginId || !password) {
+      return res.status(400).json({ success: false, message: 'Please enter your Login ID and password.' });
+    }
+    const archived = await readKey('archived', []);
+    if (archived.find(s => s.loginId === loginId)) {
+      return res.status(403).json({ success: false, message: 'Your account is no longer active. Please contact school administration.' });
+    }
+    const students = await readKey('students', []);
+    const student = students.find(s => s.loginId === loginId && s.status === 'active');
+    if (!student || !studentPassword.verify(password, student.password)) {
+      return res.status(401).json({ success: false, message: 'Invalid Login ID or Password' });
+    }
+    const token = sessionToken({ id: 'stu:' + student.id, role: 'student', loginId: student.loginId, studentId: student.id });
+    const { password: _omit, ...profile } = student;
+    res.json({ success: true, token, student: profile });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
   }
 });
 
 // @route   GET /api/auth/me
-// @desc    Get current logged-in user
-// @access  Private
-router.get('/me', protect, async (req, res) => {
+router.get('/me', protect, (req, res) => {
+  res.json({ success: true, user: { loginId: req.user.loginId, role: req.user.role, studentId: req.user.studentId } });
+});
+
+// @route   POST /api/auth/reauth/request
+// @desc    Admin re-authentication for critical actions: password -> emailed OTP
+router.post('/reauth/request', protect, authorize('admin'), limitLogin, async (req, res) => {
+  const { loginId, password } = req.body;
   try {
-    let studentDetails = null;
-    if (req.user.role === 'student') {
-      studentDetails = await Student.findOne({ loginId: req.user.loginId });
-    }
-    res.json({
-      success: true,
-      user: { id: req.user._id, loginId: req.user.loginId, role: req.user.role, studentInfo: studentDetails }
-    });
+    const user = await User.findById(req.user._id);
+    const ok = user && String(loginId || '') === user.loginId && (await user.matchPassword(String(password || '')));
+    if (!ok) return res.status(401).json({ success: false, message: 'Invalid User ID or Password.' });
+
+    const otp = randomOtp();
+    await ttlStore.set('reauth', user.loginId, otp, FIVE_MIN);
+    await sendOtp(user, otp, 'Re-authentication');
+    res.json({ success: true, message: `A verification code has been sent to ${maskEmail(user.email || process.env.EMAIL_USER)}.` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Could not send the verification code.' });
   }
 });
 
-// @route   POST /api/auth/send-otp-monolith
-// @desc    Send OTP for self-contained HTML monolith
-// @access  Public
-router.post('/send-otp-monolith', async (req, res) => {
-  const { otp } = req.body;
+// @route   POST /api/auth/reauth/verify
+// @desc    OTP -> short-lived re-auth token (required to change credentials)
+router.post('/reauth/verify', protect, authorize('admin'), limitLogin, async (req, res) => {
+  const otp = String(req.body.otp || '').trim();
   try {
-    if (!otp) return res.status(400).json({ success: false, message: 'OTP is required' });
-    const adminEmail = process.env.EMAIL_USER;
-    await sendOTPEmail(adminEmail, otp);
-    res.json({ success: true, message: 'OTP sent successfully to registered admin email' });
+    const stored = await ttlStore.get('reauth', req.user.loginId);
+    if (!stored || stored !== otp) {
+      return res.status(400).json({ success: false, message: stored ? 'Incorrect OTP code. Please try again.' : 'The code expired. Please request a new one.' });
+    }
+    await ttlStore.del('reauth', req.user.loginId);
+    const reauthToken = jwt.sign({ id: String(req.user._id), purpose: 'reauth' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    res.json({ success: true, reauthToken });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Verification failed.' });
   }
 });
 
-router.post('/verify-credentials', async (req, res) => {
-  const { loginId, password, role } = req.body;
-  console.log(`[LOGIN DEBUG] Received login attempt. ID: "${loginId}", Role: "${role}", Password Length: ${password ? password.length : 0}`);
+// @route   PUT /api/auth/credentials
+// @desc    Change admin login ID and/or password (needs a re-auth token)
+router.put('/credentials', protect, authorize('admin'), async (req, res) => {
+  const { reauthToken, newLoginId, newPassword } = req.body;
   try {
-    const escaped = (loginId || '').replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const user = await User.findOne({ loginId: { $regex: new RegExp('^' + escaped + '$', 'i') } });
-    if (!user) {
-      console.log(`[LOGIN DEBUG] User "${loginId}" NOT found in database.`);
-      return res.json({ success: false, message: 'Invalid username' });
+    let decoded;
+    try { decoded = jwt.verify(String(reauthToken || ''), process.env.JWT_SECRET); } catch (e) { decoded = null; }
+    if (!decoded || decoded.purpose !== 'reauth' || decoded.id !== String(req.user._id)) {
+      return res.status(401).json({ success: false, message: 'Please verify your identity again.' });
     }
-    console.log(`[LOGIN DEBUG] Found user: "${user.loginId}", Role: "${user.role}", Email: "${user.email}"`);
-    if (role && user.role !== role) {
-      console.log(`[LOGIN DEBUG] Role mismatch. Expected: "${role}", Found: "${user.role}"`);
-      return res.json({ success: false, message: 'Role mismatch' });
-    }
-
-    const isMatch = await user.matchPassword(password);
-    console.log(`[LOGIN DEBUG] Password match result: ${isMatch}`);
-    if (!isMatch) return res.json({ success: false, message: 'Invalid password' });
-
-    let studentInfo = null;
-    if (user.role === 'student') {
-      studentInfo = await Student.findOne({ loginId: { $regex: new RegExp('^' + escaped + '$', 'i') } });
-    }
-    res.json({ success: true, role: user.role, studentInfo });
-  } catch (err) {
-    console.error(`[LOGIN DEBUG] Error:`, err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// @route   POST /api/auth/reset-credentials-monolith
-// @desc    Reset admin credentials (authenticates using current pwd first)
-// @access  Public
-router.post('/reset-credentials-monolith', async (req, res) => {
-  const { currentLoginId, currentPassword, newLoginId, newPassword } = req.body;
-  try {
-    const user = await User.findOne({ loginId: currentLoginId, role: 'admin' });
-    if (!user) return res.json({ success: false, message: 'Invalid current credentials' });
-
-    const isMatch = await user.matchPassword(currentPassword);
-    if (!isMatch) return res.json({ success: false, message: 'Invalid current credentials' });
-
-    if (newLoginId) {
-      const existing = await User.findOne({ loginId: newLoginId });
-      if (existing && existing._id.toString() !== user._id.toString()) {
-        return res.json({ success: false, message: 'New username already in use' });
-      }
-      user.loginId = newLoginId;
-    }
-    if (newPassword) user.password = newPassword;
-    await user.save();
-    res.json({ success: true, message: 'Admin credentials successfully updated in backend.' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// @route   POST /api/auth/request-otp-action
-// @desc    Request OTP for a sensitive admin action
-// @access  Private (Admin Only)
-router.post('/request-otp-action', protect, authorize('admin'), async (req, res) => {
-  try {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const TTL_5_MIN = 5 * 60 * 1000;
-
-    // FIX #3: Persist OTP to file
-    ttlStore.set('otp', req.user.loginId, otp, TTL_5_MIN);
-
-    const adminEmail = req.user.email || process.env.EMAIL_USER;
-    console.log(`\n======================================================`);
-    console.log(`[DEVELOPER OTP BYPASS] Generated OTP for Admin Action: ${otp}`);
-    console.log(`======================================================\n`);
-
-    try {
-      await sendOTPEmail(adminEmail, otp);
-    } catch (emailErr) {
-      console.error('[EMAIL ERROR] Failed to send OTP email:', emailErr.message);
-    }
-
-    const maskedEmail = adminEmail.replace(/(.{3})(.*)(@.*)/, '$1***$3');
-    res.json({
-      success: true,
-      message: `A verification code (OTP) has been sent to your registered email (${maskedEmail})`
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// @route   PUT /api/auth/reset-credentials
-// @access  Private (Admin Only)
-router.put('/reset-credentials', protect, authorize('admin'), async (req, res) => {
-  const { newLoginId, newPassword, otp } = req.body;
-  try {
-    if (!otp) return res.status(400).json({ success: false, message: 'Verification code (OTP) is required.' });
-
-    // FIX #3: Read from persistent store
-    const storedOtp = ttlStore.get('otp', req.user.loginId);
-    if (!storedOtp) {
-      return res.status(400).json({ success: false, message: 'Verification code expired or not found. Please request a new code.' });
-    }
-    if (storedOtp !== otp.trim()) {
-      return res.status(400).json({ success: false, message: 'Incorrect verification code. Please try again.' });
-    }
-    ttlStore.del('otp', req.user.loginId); // one-time use
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: 'Admin user not found' });
 
     if (newLoginId) {
+      if (String(newLoginId).length < 6) return res.status(400).json({ success: false, message: 'User ID must be at least 6 characters.' });
       const existing = await User.findOne({ loginId: newLoginId });
-      if (existing && existing._id.toString() !== user._id.toString()) {
+      if (existing && String(existing._id) !== String(user._id)) {
         return res.status(400).json({ success: false, message: 'Username already in use.' });
       }
       user.loginId = newLoginId;
     }
-    if (newPassword) user.password = newPassword;
+    if (newPassword) {
+      const strong = newPassword.length >= 8 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /\d/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword);
+      if (!strong) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character.' });
+      if (await user.matchPassword(newPassword)) return res.status(400).json({ success: false, message: 'New password cannot be the same as the current one.' });
+      user.password = newPassword;
+    }
     await user.save();
-    res.json({ success: true, message: 'Admin credentials successfully updated.' });
+    res.json({ success: true, message: 'Admin credentials updated.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Could not update credentials.' });
   }
 });
 

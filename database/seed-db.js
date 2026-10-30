@@ -103,17 +103,18 @@ async function seed() {
 
   // If no admin was preserved, add default admin
   if (db.users.length === 0) {
+    const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || require('crypto').randomBytes(12).toString('base64url');
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('noble2026password', salt);
+    const passwordHash = await bcrypt.hash(initialPassword, salt);
     db.users.push({
       _id: "admin_noble_id",
       loginId: "admin_noble",
       password: passwordHash,
       role: "admin",
-      email: "tankarisrilatha719@gmail.com",
+      email: process.env.EMAIL_USER || "",
       createdAt: new Date().toISOString()
     });
-    console.log('Created default admin user: admin_noble / noble2026password');
+    console.log(`Created admin user "admin_noble" with password: ${initialPassword} (change it after first login)`);
   }
 
   let studentIdCounter = 100; // Start NHS100 onwards

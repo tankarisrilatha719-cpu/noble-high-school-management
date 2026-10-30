@@ -1,108 +1,3 @@
-// ============================================================================
-// === ANTI-DEBUGGING SHIELD ===
-// ============================================================================
-// This block runs FIRST, before any other JS. Its job is to make casual
-// inspection of credentials harder. It is NOT bulletproof — anyone who saves
-// this HTML and opens it in a text editor still sees the SHA-256 hashes (which
-// are one-way and can't be reversed without the plaintext anyway). But it
-// raises the bar against:
-//   - typing variable names in the live console
-//   - using `console.log` to dump objects
-//   - opening DevTools at all on this page
-// The shield runs as an IIFE so the helpers don't leak to global scope.
-(function antiDebugShield() {
-  // 1. Override every console method to a silent no-op. Even if some other
-  //    code accidentally logs sensitive data, nothing reaches the DevTools
-  //    console. We DO keep `console.error` — but route it through a wrapper
-  //    that scrubs anything looking like a credential.
-  const noop = function(){};
-  const consoleMethods = ['log', 'debug', 'info', 'warn', 'dir', 'dirxml',
-    'table', 'trace', 'group', 'groupCollapsed', 'groupEnd', 'time',
-    'timeEnd', 'timeLog', 'profile', 'profileEnd', 'count', 'countReset',
-    'assert', 'clear'];
-  consoleMethods.forEach(function(m) {
-    try { Object.defineProperty(console, m, { value: noop, writable: false, configurable: false }); }
-    catch (e) { try { console[m] = noop; } catch (e2) {} }
-  });
-  // Keep error() but make it harmless — print only a generic message.
-  try {
-    const origError = console.error;
-    Object.defineProperty(console, 'error', {
-      value: function() { /* silenced for security */ },
-      writable: false, configurable: false
-    });
-  } catch (e) {}
-
-  // 2. Block right-click globally. Right-click is the easiest path for a
-  //    casual user to reach "Inspect Element" → DevTools.
-  document.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    return false;
-  }, true);
-
-  // 3. Block common keyboard shortcuts that open DevTools or View Source:
-  //    F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U, Cmd+Opt+I, Cmd+Opt+J.
-  document.addEventListener('keydown', function(e) {
-    const k = e.key;
-    const ctrl = e.ctrlKey || e.metaKey;
-    const shift = e.shiftKey;
-    if (k === 'F12') { e.preventDefault(); return false; }
-    if (ctrl && shift && (k === 'I' || k === 'i' || k === 'J' || k === 'j' || k === 'C' || k === 'c')) {
-      e.preventDefault(); return false;
-    }
-    if (ctrl && (k === 'U' || k === 'u')) { e.preventDefault(); return false; }
-  }, true);
-
-  // 4. DevTools-open detection. Two heuristics:
-  //    (a) The classic "outerWidth - innerWidth > 160" trick — when DevTools
-  //        is docked to the side or bottom, this difference jumps.
-  //    (b) The debugger-trap timing trick: a `debugger` statement inside a
-  //        function pauses execution if DevTools is open; we measure how
-  //        long the function takes to run.
-  //  When devtools is detected, we wipe the console aggressively and refuse
-  //  to render the page.
-  let devtoolsOpen = false;
-  function lockdownPage(reason) {
-    if (devtoolsOpen) return;
-    devtoolsOpen = true;
-    try {
-      // Replace the entire body with a security notice so even if they have
-      // DevTools open, there's nothing useful on the page to inspect.
-      const body = document.body || document.documentElement;
-      if (body) {
-        body.innerHTML =
-          '<div style="font-family:Segoe UI,Arial,sans-serif;text-align:center;padding:60px 20px;background:#0b1220;color:#fff;min-height:100vh;box-sizing:border-box">' +
-          '<h1 style="color:#c8a951;margin-bottom:20px"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></span> Security Notice</h1>' +
-          '<p style="font-size:1.1rem;max-width:600px;margin:0 auto 20px">For the safety of student records and staff information, this site has paused.</p>' +
-          '<p style="color:#aaa;font-size:0.95rem;max-width:600px;margin:0 auto">Please open the site in a full browser window and refresh the page to continue.</p>' +
-          '</div>';
-      }
-    } catch (e) {}
-  }
-  // Start the size-difference watchdog after the page has rendered.
-  function checkDevTools() {
-    try {
-      const widthDiff = window.outerWidth - window.innerWidth;
-      const heightDiff = window.outerHeight - window.innerHeight;
-      // Thresholds chosen to avoid false positives on small zoom changes.
-      // 160px is roughly the minimum docked DevTools panel width/height.
-      if (widthDiff > 200 || heightDiff > 200) lockdownPage('size');
-    } catch (e) {}
-  }
-  // Start polling shortly after page load. Don't fire instantly — we need the
-  // body to exist before we can scrub it.
-  setTimeout(function tick() {
-    checkDevTools();
-    setTimeout(tick, 1500);
-  }, 2000);
-
-  // 5. Periodically clear console — even if the override above misses
-  //    something (some browsers expose console.* before our override runs).
-  //    Note: console.clear was already overridden to noop, so we use a
-  //    direct call to the original via a fresh frame trick.
-  // (Kept simple here — primary protection is the noop overrides above.)
-})();
-
 const LOGO_SRC = "assets/logo.png";
 
 // =========================================
@@ -120,7 +15,7 @@ const LOGO_SRC = "assets/logo.png";
 // regardless of this flag, because the physical card itself bears the
 // signature and the digital card is a faithful on-screen replica.
 const SHOW_PRINCIPAL_SIGNATURE = false;
-const PRINCIPAL_SIGNATURE = "data:image/jpeg;base64,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VlFJvnhYXjj9AiIvSsEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBVd8UEUBv8AXStc8yvgAIxwC0HCtEVVfxLny9X1Z8wOYYsubnssZvEJeB2ewab1ZJPHyv8AI+vAuXPl1DsOPLELXg/5fmwB+atMql+Ca90Nvulxt1S2VtTdZGtg2MJZlrXOO4+nAOPsraKG1/pI1e08XHUqme70QREVg0AREQBERAEREAREQBY9dQ0ddEYa2kgqYyMFksYeD6dj9yshECeOR4UNJS0NO2mo6aGmgZ+GOKMMa37AcL3REAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBEXjWVdLRwGerqYaeId3yyBjR+ZQHsi4jWfVHSOmaZ7prhHXVI27KWkkY5788jBc4N7c5ytH/rx0syiNRUW68U/zFjWyMhO549AWyEEH0d2+qxc4rmy7T028qpOFKTzy4PiSmihG5+ImwUzj8NZqmcbmjD52sPPc4AI4+6xZvETSf7aGxsNNju6qO/dntjbj25z6qP4in2mxhsvq8+Kt5enqTwigKm8QxdBI+XT8DnEkRbKpwb9NxLOPrgH81jXXxA1womilttFFUyDG5pfMyN33O3d+gXqrQaymTU9kNZnPd9w/t+pYYqrPiZpJn6tqd0ThDJATvHrz/3XrJ1+1a2hdG2loDL2M76bG3PbDQ8g+vquD1nqy66rqaq53Fz3PdHta1rcNAHBwPQn1WErmm4yWeh2WyOy2paffq4uIKMcNc118DtfBtbLNJeLnNVQQivo3M+Fc6TDyS14OBnn5Sf1VqOF/PXRt0raGeV9HVVFG8EPM1NOYpontOQ5rh78gj1BKlmwdatbOaZJK98kTAWMjdSMkyfRxeQHH+/0UNnWj7tRINp9kr+8vZ3VslKLxhZw+CwWxRVUr+t2uYzTRGtgja7mSZluaMntgBxd8v6lZf8Ary1a8MpIHYnlcGNnktnmNYeOS1pbkfmO/wBFbVSLeMnNT2L1eEN9019UWgRVlpetWuTMIpI6eUwFwmc21Fol5O3aPMJZjjOc557LZ2nrJr6rc4NslJKA87f/AAqcZb6D5ZTz9cYPsF46sU8Faey2pwW86f3X6lh0UIx9ROqdVXCip9DvPAd8RHRvLPsdzwB79/6rf2u69ZKmenkNiscNKXZlbVtMcjmcfh2yu2n7heqaZr62l1qK+dx/7R/Uk9FrNOvvr6Muv0FBBUZ4bSSPe3H1LgEWZrnwNmiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAhRYd78z+EVXlVJpX+U7bMMf4Zx+Ln2Q9Sy8ERdausD9NVxsliEctXsJknyCGfRv+99wq4aj1hqK/XB1VcrnNUPcQCS/BaAcgcexXtqGOouesq2MVD6x89a8NkHJeS488KVtA9AjeqNlyu9yno6aUZZHHGNzxj8QzyBnI5APHstJV+IuZtQ4JH3i1ttC2XtKcrnG/Jc2st+C6EHyxVlS4yunfJjkNcd2Dlb3Suj73qmY09mtc9d5bwJnNA2xE8/N7e/KtXpfo1oaxBjhbXV0zBxJVO3HPuAMALuLXa7da4HQ26hpqSN7i97YYwwOcTkuOO5J9Sp6em8PnZo9S9pVKHyWFLPfLh9En+hVNvQzXdSWujtkNOzADhPUxtIx7AE/2XXWvw9XI07G1l9gpnc7hC0vHbjAwPVWKCK1CzpQzhHK19vdZqxUVNRx2JfnkhC0eHi007x8dqGuqGBwdtiibGe/bJzwtw3oHoYNILro4n8RNSDn/wBPCldFMqUIrCRq6u1OsVXvSuJeTx6YI6pei3T+BpDrTLNlu0mSof8A2IULdatIW7Sl+ip7TTy01HPG8sEsm9uQOcev6q1yhnxTWoT6ZpLsGAvpXmMe+H//AAo7iKUG0uRutlNevJ6rThXrSlGfDDbaz0+5A3QSzMuOuPKqqN1ZBK8MkhilEbi0kku3cYxgdjnGVbmPQOjGRhjdM2wN2OZjyRjDu/8ATuqfdKdSy6T1JJcYqVk80UsOGyZAc1z9hHHY4dnP0V5x2UOn4dBE239WvR1VxjJqO6scfE0UWjtKxuc5mnbXlxBOaZp5AwO4W0goKKBgZDSU8TR6MiaB+wWSivHCSrVJ/ik35nmIIR2ij/8AKF9hoHYYX6iGGWxhERDwIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAvioijnhfDKxr43gtc09iPZfaICt/U/pNW2K+zal07HHNRfPKYXPDfKkLTgH2YXEdskBTl0+vFZfdH226XGkFHWzQg1MAduEcg4cAfUZHdbuWNksZjkY17HDBa4ZBSCGKCMRQRMiYOzWNAA/ILCMFFvHU2uo6vcajCmrh5cFhPtXf3959oiLM1QREQBERAFGHiXLm9NnvGPlq4uCeO5Unrh+uFIyr6d17H08c4ZiQNeCcEdjx6rCp+Fm20GoqWp0JvpJepUvQ1XZKbVzZtR2+WtoHbBJTxOw4nzGhrgcjs7B79gVewL+eVNMYtQRBzHESSMjGOwPmMOV/Q0Knp7zTfidZ7SUv8Vi1/sXqwiIr589CIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAuM6zzGHQNcQcbgG98d12a4Dr8xr+mtcHAnD2Ec453BYyeE2bLRknqFFP/AHL1Kq9ONP8A+kGsYKB5diSpjaCx2Dw8PI7ezCD91ekdlUjw408M3UmDzWbsTEgEnGRG4jj7q24VWxilSyuuTpfaDWdTWZRf9sYr7Z/MIiK4cQEREAREQBERAf/Z";
+const PRINCIPAL_SIGNATURE = location.origin + '/assets/principal-signature.jpg';
 
 // === DATA STORE ===
 // localStorage holds everything EXCEPT photos. Photos (posters, gallery,
@@ -185,20 +80,13 @@ const BACKEND_URL = localStorage.getItem('nhs_custom_backend_url') ||
 window._syncing = false;
 
 function syncToBackend(key, val) {
+  if (Session.role() !== 'admin') return;
   window._syncing = true;
-  fetch(BACKEND_URL + '/api/sync/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value: val })
-  })
-  .then(res => res.json())
-  .then(json => {
-    if (!json.success) console.warn('[SYNC ERROR]', json.message);
-  })
-  .catch(err => console.error('[SYNC NETWORK ERROR]', err))
-  .finally(() => {
-    window._syncing = false;
-  });
+  api('/api/sync/set', { method: 'POST', body: { key, value: val } })
+    .then(json => {
+      if (!json.success && json.status !== 401) showToast('Could not save to the server: ' + (json.message || 'please try again.'), 'error');
+    })
+    .finally(() => { window._syncing = false; });
 }
 
 const DB = {
@@ -235,83 +123,20 @@ const DB = {
       catch(e) { reject(e); }
     });
   },
+  setLocal(key, val) {
+    if (PHOTO_KEYS.indexOf(key) !== -1) { _PHOTO_CACHE[key] = val; return; }
+    try { localStorage.setItem('nhs_'+key, JSON.stringify(val)); } catch(e) {}
+  },
   getObj(key, def={}) { try { const v = localStorage.getItem('nhs_'+key); return v ? JSON.parse(v) : def; } catch(e) { return def; } }
 };
 
-// ===========================================================================
-// === SECURE CREDENTIAL VAULT ===
-// ===========================================================================
-// Background: in earlier versions of this file the admin credentials were
-// declared as global variables at module scope. That meant anyone could open
-// DevTools, type the variable name, and read everything in plain text.
-//
-// New design — the "vault":
-//   1. The plaintext UID, password and OTP NEVER appear anywhere in this file.
-//      What we store are SHA-256 hashes (50,000 rounds, salted). Even if an
-//      attacker reads the source, the hashes are one-way — they can't be
-//      reversed back to the original credentials.
-//   2. Everything lives inside an IIFE (closure). The hashes, the verify
-//      function, and the helpers are LOCAL variables. They are not on `window`,
-//      not on any global object, and cannot be reached from the console.
-//   3. The IIFE exposes ONE non-enumerable, non-writable function on window:
-//      `__vault.verifyAdmin(uid, pwd, otp) -> boolean`. That's the only thing
-//      the rest of the app can call. The vault refuses to leak any field.
-//   4. Student passwords still need an encoder (so we can compare what a student
-//      types against what's stored on their record). The character map is also
-//      kept inside the closure, so the character map can no longer be read
-//      from the console.
-//   5. Anti-debugging: console.log/dir/table are no-ops, F12/right-click/Ctrl-U
-//      are blocked, and the script aborts if DevTools is detected open at load.
-// ---------------------------------------------------------------------------
-// To rotate the admin password: regenerate the hashes (the in-file comment
-// near `__VAULT_HASHES` explains how) and replace the three constants.
-// ---------------------------------------------------------------------------
-(function setupVault() {
-  // --- 1. SHA-256 stretching helper. Uses Web Crypto so the browser does it
-  //        natively. 50,000 rounds means a brute-force attempt is impractical
-  //        on the client.
-  const SALT = 'NHS_Vault_v1_2026';
-  const ROUNDS = 50000;
-
-  // Synchronous fallback (used only if SubtleCrypto unavailable).
-  // We keep the core implementation async because it's faster.
-  async function stretch(input) {
-    const enc = new TextEncoder();
-    let buf = enc.encode(SALT + input);
-    for (let i = 0; i < ROUNDS; i++) {
-      buf = new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
-    }
-    // Hex-encode
-    let hex = '';
-    for (let i = 0; i < buf.length; i++) {
-      const b = buf[i];
-      hex += (b < 16 ? '0' : '') + b.toString(16);
-    }
-    return hex;
-  }
-
-  // --- 2. The credential hashes. These are precomputed using the SAME stretch()
-  //        function in Python. Anyone reading the file sees only the hash —
-  //        the plaintext UID/password/OTP are not present.
-  //
-  // To rotate any of these: open the browser console while you're logged in as
-  // admin and run:  await __vault.computeHash('YourNewValue')
-  // Copy the result and replace the matching constant below.
-  const _UID_HASH = 'e4c585aa7daaa8f5c01c448c83ba8e1987e057983b0e6e9b5e53e00f9e4a4e60';
-  const _PWD_HASH = 'afdddcd04c5897238417980d0ecff7c0a9e8f0d97b002b3ec9bcc1d2a470c5be';
-  const _OTP_HASH = '4b2909849fb3691ae78354725e231017ef95f219e8e1b6de0929412e76e323bb';
-
-  // Mutable copies — used so admin can change credentials at runtime via the
-  // Reset Credentials flow. Originals remain in the constants above.
-  let uidHash = _UID_HASH;
-  let pwdHash = _PWD_HASH;
-  let otpHash = _OTP_HASH;
-
-  // --- 3. Student password encoder. Lives inside this closure so the
-  //        character map is unreadable from outside. Encoding is reversible
-  //        (it has to be, because we compare against what's stored on each
-  //        student's record), but the map itself never escapes the closure.
-  const _CHAR_MAP = {
+// === STUDENT PASSWORD CODEC ===
+// Student passwords are stored encoded so they can't be read at a glance in
+// backups; the admin portal decodes them to print login slips. The server
+// (backend/utils/studentPassword.js) uses the same map to check logins, so
+// keep the two maps identical.
+const StudentPassword = (function () {
+  const CHAR_MAP = {
     'A':'7*k9P!mQ','B':'2#mQv&zL','C':'L5&tS9!w','D':'9!wX1@rZ','E':'b4@rZ*kN',
     'F':'G8^nJ3$a','G':'0%hV6vB9','H':'kM3$YpC2','I':'1(pL9fS6','J':'qW2!f7*k',
     'K':'5*dN8xM9','L':'rT0#xbL0','M':'jZ7@b4#b','N':'6&uK4rY2','O':'vB9%m1^j',
@@ -334,124 +159,76 @@ const DB = {
     '#':'aE7@m6&L','*':'b0)kS9rY','+':'cP3!nT8x','-':'dQ4#xJ2j','>':'eR5^vB9%',
     '~':'fT6&w7&z','`':'gU7$tuY4','\\':'hV8@l0%m'
   };
+  const REVERSE = {};
+  Object.keys(CHAR_MAP).forEach(k => { REVERSE[CHAR_MAP[k]] = k; });
 
-  // Encode a plaintext string into the obfuscated form. Used for student records.
-  function _encode(plain) {
+  function encode(plain) {
     if (plain == null) return '';
     let out = '';
-    for (let i = 0; i < plain.length; i++) {
-      const ch = plain[i];
-      out += (_CHAR_MAP[ch] !== undefined ? _CHAR_MAP[ch] : ch);
+    for (const ch of String(plain)) out += CHAR_MAP[ch] !== undefined ? CHAR_MAP[ch] : ch;
+    return out;
+  }
+
+  function decode(encoded) {
+    if (!encoded) return '';
+    let out = '';
+    let i = 0;
+    while (i < encoded.length) {
+      const hit = [8, 6].find(n => REVERSE[encoded.slice(i, i + n)] !== undefined);
+      if (hit) { out += REVERSE[encoded.slice(i, i + hit)]; i += hit; }
+      else { out += encoded[i]; i += 1; }
     }
     return out;
   }
 
-  // --- 4. The ONLY function the rest of the app can call to verify admin login.
-  //        Returns a Promise<boolean>. Never returns the credentials themselves.
-  async function verifyAdmin(uid, pwd, otp) {
-    if (typeof uid !== 'string' || typeof pwd !== 'string') return false;
-    try {
-      const [hu, hp, ho] = await Promise.all([
-        stretch(uid),
-        stretch(pwd),
-        otp != null ? stretch(otp) : Promise.resolve('')
-      ]);
-      // Constant-time-ish compare (string === in JS is not strictly constant
-      // time but the timing leak is negligible against a brute-force attacker
-      // who can already read the page source).
-      const uidOk = hu === uidHash;
-      const pwdOk = hp === pwdHash;
-      const otpOk = otp == null ? true : (ho === otpHash);
-      return uidOk && pwdOk && otpOk;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Verify password ONLY (no UID/OTP) — used by the "current password" gate
-  // when an admin wants to change one of the three credentials.
-  async function verifyAdminPwd(pwd) {
-    if (typeof pwd !== 'string') return false;
-    try {
-      const h = await stretch(pwd);
-      return h === pwdHash;
-    } catch (e) { return false; }
-  }
-
-  // Rotate one of the three credentials. Caller must supply the CURRENT
-  // password (verified inside the vault) before any change is accepted.
-  async function rotateAdmin(currentPwd, field, newValue) {
-    if (!(await verifyAdminPwd(currentPwd))) return false;
-    const newHash = await stretch(newValue);
-    if (field === 'uid')      uidHash = newHash;
-    else if (field === 'pwd') pwdHash = newHash;
-    else if (field === 'otp') otpHash = newHash;
-    else return false;
-    return true;
-  }
-
-  // For student logins: encode the typed password and compare against the
-  // stored encoded string on the student record.
-  function verifyStudent(plainTyped, stored) {
-    if (stored == null) return false;
-    if (plainTyped === stored) return true;          // legacy plain-text records
-    if (_encode(plainTyped) === stored) return true; // new encoded records
-    return false;
-  }
-
-  // For admin saving a student: returns the encoded form of the student's
-  // chosen password. Map stays sealed inside this closure.
-  function encodeStudentPassword(plain) {
-    return _encode(plain);
-  }
-
-  function decodeStudentPassword(encoded) {
-    if (!encoded) return '';
-    const reverseMap = {};
-    for (const key in _CHAR_MAP) {
-      reverseMap[_CHAR_MAP[key]] = key;
-    }
-    let decoded = '';
-    let i = 0;
-    while (i < encoded.length) {
-      let chunk = encoded.slice(i, i + 8);
-      if (reverseMap[chunk] !== undefined) {
-        decoded += reverseMap[chunk];
-        i += 8;
-      } else {
-        decoded += encoded[i];
-        i += 1;
-      }
-    }
-    return decoded;
-  }
-
-  // --- 5. Expose the minimal API. Use defineProperty so the property is
-  //        non-writable and non-configurable: external code can't reassign or
-  //        delete __vault.
-  const api = Object.freeze({
-    verifyAdmin,
-    verifyAdminPwd,
-    rotateAdmin,
-    verifyStudent,
-    encodeStudentPassword,
-    decodeStudentPassword,
-    // computeHash is a maintenance helper for rotating creds. It returns
-    // a hash but never the input, so it's safe to expose.
-    computeHash: stretch
-  });
-  Object.defineProperty(window, '__vault', {
-    value: api,
-    writable: false,
-    configurable: false,
-    enumerable: false  // doesn't show up in `Object.keys(window)`
-  });
+  return { encode, decode };
 })();
 
-// Wipe any stale admin credentials older versions of this app may have written
-// to localStorage. The new vault never persists creds, so this key is purely
-// stale data and should be removed on every load.
-try { localStorage.removeItem('nhs_admin_creds'); } catch (e) {}
+// === SESSION ===
+// The login token issued by the server lives in sessionStorage, so closing
+// the tab ends the session.
+const Session = {
+  get() { try { return JSON.parse(sessionStorage.getItem('nhs_session')) || null; } catch (e) { return null; } },
+  set(v) { try { sessionStorage.setItem('nhs_session', JSON.stringify(v)); } catch (e) {} },
+  clear() { try { sessionStorage.removeItem('nhs_session'); } catch (e) {} },
+  role() { const v = Session.get(); return v ? v.role : null; }
+};
+
+// Records that only a logged-in admin or student may see. They are removed
+// from the browser on logout and for visitors who are not logged in.
+const PRIVATE_DATA_KEYS = ['students','archived','fees','notifications','complaints','attendance',
+  'holidays','leaves','exams','reports','hallTickets','admissions','system'];
+
+function clearPrivateData() {
+  PRIVATE_DATA_KEYS.forEach(k => { try { localStorage.removeItem('nhs_' + k); } catch (e) {} });
+  try { localStorage.removeItem('nhs_admin_creds'); } catch (e) {}
+}
+
+// JSON request to the school server with the session token attached.
+// Always resolves to an object with `success`; network failures included.
+async function api(path, { method = 'GET', body } = {}) {
+  const headers = {};
+  const sess = Session.get();
+  if (sess && sess.token) headers.Authorization = 'Bearer ' + sess.token;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  let res;
+  try {
+    res = await fetch(BACKEND_URL + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  } catch (e) {
+    return { success: false, offline: true, message: 'Cannot reach the school server. Please check your internet connection and try again.' };
+  }
+  let json = {};
+  try { json = await res.json(); } catch (e) {}
+  if (res.status === 401 && sess && path.indexOf('/api/auth/') !== 0) handleSessionExpired();
+  return { success: false, ...json, status: res.status };
+}
+
+function handleSessionExpired() {
+  const wasAdmin = Session.role() === 'admin';
+  Session.clear();
+  if (wasAdmin) adminLogout(); else studentLogout();
+  showToast('Your session has expired. Please log in again.', 'error');
+}
 
 let SYSTEM = DB.getObj('system', { academicYear: '2026-2027' });
 let failCounts = { admin: 0, student: 0 };
@@ -518,61 +295,39 @@ function initSampleData() {
   }
 
   // Initialize every store as an empty array if not already set.
-  if (!localStorage.getItem('nhs_students'))      DB.set('students', []);
-  if (!localStorage.getItem('nhs_archived'))      DB.set('archived', []);
-  if (!localStorage.getItem('nhs_fees'))          DB.set('fees', []);
-  if (!localStorage.getItem('nhs_notifications')) DB.set('notifications', []);
-  if (!localStorage.getItem('nhs_complaints'))    DB.set('complaints', []);
-  if (!localStorage.getItem('nhs_attendance'))    DB.set('attendance', {});
-  if (!localStorage.getItem('nhs_holidays'))      DB.set('holidays', []);
-  if (!localStorage.getItem('nhs_leaves'))        DB.set('leaves', []);
-  if (!localStorage.getItem('nhs_exams'))         DB.set('exams', []);
-  if (!localStorage.getItem('nhs_reports'))       DB.set('reports', []);
-  if (!localStorage.getItem('nhs_hallTickets'))   DB.set('hallTickets', []);
-  if (!localStorage.getItem('nhs_admissions'))    DB.set('admissions', []);
+  if (!localStorage.getItem('nhs_students'))      localStorage.setItem('nhs_students', '[]');
+  if (!localStorage.getItem('nhs_archived'))      localStorage.setItem('nhs_archived', '[]');
+  if (!localStorage.getItem('nhs_fees'))          localStorage.setItem('nhs_fees', '[]');
+  if (!localStorage.getItem('nhs_notifications')) localStorage.setItem('nhs_notifications', '[]');
+  if (!localStorage.getItem('nhs_complaints'))    localStorage.setItem('nhs_complaints', '[]');
+  if (!localStorage.getItem('nhs_attendance'))    localStorage.setItem('nhs_attendance', '{}');
+  if (!localStorage.getItem('nhs_holidays'))      localStorage.setItem('nhs_holidays', '[]');
+  if (!localStorage.getItem('nhs_leaves'))        localStorage.setItem('nhs_leaves', '[]');
+  if (!localStorage.getItem('nhs_exams'))         localStorage.setItem('nhs_exams', '[]');
+  if (!localStorage.getItem('nhs_reports'))       localStorage.setItem('nhs_reports', '[]');
+  if (!localStorage.getItem('nhs_hallTickets'))   localStorage.setItem('nhs_hallTickets', '[]');
+  if (!localStorage.getItem('nhs_admissions'))    localStorage.setItem('nhs_admissions', '[]');
   // Posters / gallery / activities are hydrated from IndexedDB into the
   // in-memory cache by hydratePhotoCache() at app start.
-}
-
-// === LOGO SETUP ===
-function updateFavicon() {
-  let icon = document.querySelector('link[rel="icon"]');
-  if (!icon) {
-    icon = document.createElement('link');
-    icon.rel = 'icon';
-    document.head.appendChild(icon);
-  }
-  icon.href = LOGO_SRC;
-  icon.type = 'image/png';
-
-  let shortcut = document.querySelector('link[rel="shortcut icon"]');
-  if (!shortcut) {
-    shortcut = document.createElement('link');
-    shortcut.rel = 'shortcut icon';
-    document.head.appendChild(shortcut);
-  }
-  shortcut.href = LOGO_SRC;
-  shortcut.type = 'image/png';
-
-  let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-  if (!appleIcon) {
-    appleIcon = document.createElement('link');
-    appleIcon.rel = 'apple-touch-icon';
-    document.head.appendChild(appleIcon);
-  }
-  appleIcon.href = LOGO_SRC;
 }
 
 async function loadDataFromBackend(silent = false) {
   if (window._syncing) return;
   window._syncing = true;
+  let changed = false;
   try {
-    const res = await fetch(BACKEND_URL + '/api/sync/get-all');
-    const json = await res.json();
+    const json = await api('/api/sync/get-all');
     if (json.success && json.data) {
+      if (Session.role() !== 'admin') {
+        PRIVATE_DATA_KEYS.forEach(k => {
+          if (json.data[k] === undefined && localStorage.getItem('nhs_' + k) !== null) {
+            localStorage.removeItem('nhs_' + k);
+            changed = true;
+          }
+        });
+      }
       if (!silent) console.log('[SYNC] Hydrating local database from backend database/JSON fallback...');
       const keys = Object.keys(json.data);
-      let changed = false;
       for (const k of keys) {
         const val = json.data[k];
         if (PHOTO_KEYS.indexOf(k) !== -1) {
@@ -592,8 +347,7 @@ async function loadDataFromBackend(silent = false) {
         }
       }
       
-      if (changed && silent) {
-        console.log('[SYNC] Database changed on server. Re-rendering views...');
+      if (changed) {
         if (typeof renderStudentTable === 'function') renderStudentTable();
         if (typeof renderDashboard === 'function') renderDashboard();
         if (typeof renderFeeTable === 'function') renderFeeTable();
@@ -604,8 +358,14 @@ async function loadDataFromBackend(silent = false) {
         if (typeof renderPosterSlider === 'function') renderPosterSlider();
         if (typeof renderActivitySlider === 'function') renderActivitySlider();
         if (typeof renderGallery === 'function') renderGallery();
+        if (typeof renderFacultyPage === 'function') renderFacultyPage();
+        if (currentPage === 'student' && currentStudent) {
+          const me = (DB.get('students') || [])[0];
+          if (me && me.id === currentStudent.id) currentStudent = me;
+        }
       }
     }
+    return changed;
   } catch (err) {
     if (!silent) console.warn('[SYNC WARNING] Could not load database from backend:', err);
   } finally {
@@ -613,33 +373,34 @@ async function loadDataFromBackend(silent = false) {
   }
 }
 
+// Logged-in admins see changes made on other devices within a few seconds;
+// students refresh less often. Visitors load once per page view.
 function startBackendSyncPolling() {
+  let last = 0;
   setInterval(async () => {
-    // Only fetch if tab is active (Page Visibility API)
     if (document.hidden) return;
+    const role = Session.role();
+    const every = role === 'admin' ? 10000 : role === 'student' ? 30000 : 0;
+    if (!every || Date.now() - last < every) return;
+    last = Date.now();
     await loadDataFromBackend(true);
-  }, 3000);
+  }, 2000);
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-  updateFavicon();
-  document.getElementById('headerLogo').src = LOGO_SRC;
-  document.getElementById('heroLogo').src = LOGO_SRC;
   const stuLogo = document.getElementById('studentPortalLogo');
   if (stuLogo) stuLogo.src = LOGO_SRC;
   const sidebarStuLogo = document.getElementById('stuSidebarSchoolLogo');
   if (sidebarStuLogo) sidebarStuLogo.src = LOGO_SRC;
   
-  // Try loading database from backend server sync store in the background
-  loadDataFromBackend(false);
-  
+  if (!Session.get()) clearPrivateData();
   initSampleData();
+  restoreSession();
   setTodayDate();
   resetSessionTimer();
   updateDashYearBadge();
   updateNotifRecipientFields();
   populatePrintExamDropdowns();
-  initBusRoute(); // Bus route animation on landing page (static layout, no data needed)
   // Photos live in IndexedDB; hydrate the in-memory cache first, then render.
   hydratePhotoCache().then(() => {
     renderPosterSlider();
@@ -705,18 +466,15 @@ function showPage(name) {
   if (topNav) {
     topNav.style.display = (name === 'admin' || name === 'student') ? 'none' : '';
   }
-  // Hamburger is only needed on the admin page (it toggles the admin sidebar
-  // on narrow screens). On public pages the top-nav strip handles all
-  // navigation, so the hamburger is hidden to keep the header uncluttered.
-  // We use a CSS class so the media-query can hide it on wide screens.
+  // The header hamburger toggles the admin sidebar on narrow screens, and on
+  // public pages opens the slide-out menu on phones (where the link strip is
+  // hidden). The student portal has its own hamburger. CSS decides visibility.
   const hamb = document.getElementById('mainHamburgerBtn');
   if (hamb) {
-    if (name === 'admin') {
-      hamb.classList.add('show-on-mobile');
-    } else {
-      hamb.classList.remove('show-on-mobile');
-    }
-    // Always remove inline style; CSS media query handles the rest
+    const isPublic = name !== 'admin' && name !== 'student';
+    hamb.classList.toggle('show-on-mobile', name !== 'student');
+    hamb.classList.toggle('public-menu', isPublic);
+    hamb.setAttribute('aria-label', name === 'admin' ? 'Open admin menu' : 'Open menu');
     hamb.style.display = '';
   }
   // Site footer is shown on every PUBLIC page (landing, gallery, faculty,
@@ -740,7 +498,66 @@ function showPage(name) {
     document.getElementById('mainLoginBtn').textContent = 'Login';
     document.getElementById('mainLoginBtn').onclick = showLoginModal;
   }
+  if (name === 'admin' || name === 'student') loadScriptOnce(LIB_URLS.razorpay).catch(() => {});
+  syncRoute(name);
 }
+
+// === PUBLIC ROUTES ===
+// Each public page has its own URL so it can be bookmarked, shared and indexed.
+// The server serves index.html for any non-/api path; routeFromLocation() picks
+// the page on load and on back/forward.
+const PUBLIC_ROUTES = {
+  landing:   { path: '/',          title: 'Noble High School, Kandukur | Nursery to Class 10 | Rangareddy, Telangana', nav: 'topNavHome' },
+  gallery:   { path: '/gallery',   title: 'Gallery | Noble High School, Kandukur',          nav: 'topNavGallery' },
+  faculty:   { path: '/faculty',   title: 'Our Faculty | Noble High School, Kandukur',      nav: 'topNavFaculty' },
+  complaint: { path: '/help-desk', title: 'Parent Help Desk | Noble High School, Kandukur', nav: 'topNavComplaint' },
+  contact:   { path: '/contact',   title: 'Contact Us | Noble High School, Kandukur',       nav: 'topNavContact' }
+};
+let _routingFromHistory = false;
+
+function syncRoute(name) {
+  const route = PUBLIC_ROUTES[name];
+  if (route) {
+    document.title = route.title;
+    setActiveTopNav(route.nav);
+    if (!_routingFromHistory && location.pathname !== route.path) {
+      history.pushState({ page: name }, '', route.path);
+    }
+  } else if (location.pathname !== '/') {
+    // Portal pages are not addressable; keep the URL at the site root.
+    history.replaceState({ page: name }, '', '/');
+  }
+}
+
+function routeFromLocation() {
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  const name = Object.keys(PUBLIC_ROUTES).find(k => PUBLIC_ROUTES[k].path === path) || 'landing';
+  if (name === 'landing' && path !== '/') history.replaceState({ page: 'landing' }, '', '/');
+  _routingFromHistory = true;
+  try {
+    ({ landing: navGoHome, gallery: navGoGallery, faculty: navGoFaculty, complaint: navGoComplaint, contact: navGoContact })[name]();
+  } finally {
+    _routingFromHistory = false;
+  }
+}
+
+window.addEventListener('popstate', () => {
+  if (currentPage === 'admin' || currentPage === 'student') return;
+  routeFromLocation();
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (location.pathname !== '/' && location.pathname !== '/index.html') {
+    // Photo stores hydrate asynchronously; render the requested page once they're ready.
+    routeFromLocation();
+    hydratePhotoCache().then(() => {
+      if (currentPage === 'faculty') renderFacultyPublic();
+      if (currentPage === 'gallery') renderGallery();
+    }).catch(() => {});
+  } else {
+    syncRoute('landing');
+  }
+});
 
 // === MODALS ===
 function showLoginModal() {
@@ -804,229 +621,163 @@ function showAlert(containerId, type, message) {
 }
 
 // === ADMIN LOGIN ===
-// All credential checks are delegated to the vault — this code never sees the
-// stored UID/password/OTP. The vault returns true/false; if true we proceed.
-async function doAdminLogin() {
-  const typedCaptcha = document.getElementById('adminCaptchaInput').value.trim();
-  if (!typedCaptcha) {
-    showAlert('adminLoginError', 'error', 'Please enter the verification code (CAPTCHA).');
-    return;
-  }
-  if (typedCaptcha !== currentAdminCaptcha) {
-    showAlert('adminLoginError', 'error', 'Incorrect CAPTCHA. Please try again.');
-    document.getElementById('adminCaptchaInput').value = '';
-    regenerateAdminCaptcha();
-    return;
-  }
-  const uid = document.getElementById('adminUid').value.trim();
-  const pass = document.getElementById('adminPass').value;
-  
-  let ok = false;
-  try {
-    const backendRes = await fetch(BACKEND_URL + '/api/auth/verify-credentials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loginId: uid, password: pass, role: 'admin' })
-    });
-    const backendData = await backendRes.json();
-    if (backendData.success) {
-      ok = true;
-    }
-  } catch (err) {
-    console.warn('Backend unavailable, falling back to local vault:', err);
-    ok = await window.__vault.verifyAdmin(uid, pass, null);
-  }
-
-  if (ok) {
-    failCounts.admin = 0;
-    
-    // Generate 6-digit OTP code client-side
-    adminOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    adminOtpDetails = { uid, pass };
-    
-    closeModal('adminLoginModal');
-    document.getElementById('adminOtpInput').value = '';
-    document.getElementById('adminOtpModal').classList.add('active');
-    document.getElementById('adminOtpError').innerHTML = '';
-    
-    startAdminOtpTimer();
-    sendOtpEmailViaBackend(adminOtpCode);
-  } else {
-    failCounts.admin++;
-    let msg = 'Invalid credentials. Please check User ID and Password.';
-    if (failCounts.admin >= 3) { msg += ' <strong>Account locked. Please wait before trying again.</strong>'; document.getElementById('adminLoginModal').querySelector('button[onclick="doAdminLogin()"]').disabled = true; setTimeout(() => { document.getElementById('adminLoginModal').querySelector('button[onclick="doAdminLogin()"]').disabled=false; failCounts.admin=0; },30000); }
-    showAlert('adminLoginError','error',msg);
-    document.getElementById('adminCaptchaInput').value = '';
-    regenerateAdminCaptcha();
-  }
-}
-
-// --- ADMIN OTP LOGIC ---
-let adminOtpCode = '';
+// Step 1 checks the CAPTCHA and password on the server, which emails an OTP.
+// Step 2 sends the OTP back and receives the session token.
+let adminOtpLoginId = '';
 let adminOtpTimerInterval = null;
 let adminOtpTimeRemaining = 300;
-let adminOtpDetails = { uid: '', pass: '' };
 
-let resetCredsOtpCode = '';
-let reAuthOtpCode = '';
+function setBusy(btn, busy, label) {
+  if (!btn) return;
+  if (busy) { btn.dataset.label = btn.textContent; btn.textContent = label || 'Please wait…'; btn.disabled = true; }
+  else { btn.textContent = btn.dataset.label || btn.textContent; btn.disabled = false; }
+}
+
+async function doAdminLogin() {
+  const uid = document.getElementById('adminUid').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const captcha = document.getElementById('adminCaptchaInput').value.trim();
+  if (!uid || !pass) { showAlert('adminLoginError', 'error', 'Please enter your User ID and Password.'); return; }
+  if (!captcha) { showAlert('adminLoginError', 'error', 'Please enter the verification code (CAPTCHA).'); return; }
+
+  const btn = document.getElementById('adminLoginBtn');
+  setBusy(btn, true, 'Checking…');
+  const res = await api('/api/auth/login', { method: 'POST', body: { loginId: uid, password: pass, captchaId: currentAdminCaptchaId, captcha } });
+  setBusy(btn, false);
+
+  if (!res.success) {
+    showAlert('adminLoginError', 'error', escapeHTML(res.message || 'Login failed.'));
+    document.getElementById('adminCaptchaInput').value = '';
+    regenerateAdminCaptcha();
+    return;
+  }
+
+  adminOtpLoginId = res.loginId;
+  closeModal('adminLoginModal');
+  document.getElementById('adminOtpInput').value = '';
+  document.getElementById('adminOtpError').innerHTML = '';
+  document.getElementById('adminOtpMessage').textContent = res.message;
+  document.getElementById('adminOtpModal').classList.add('active');
+  startAdminOtpTimer();
+}
 
 function startAdminOtpTimer() {
   clearInterval(adminOtpTimerInterval);
-  adminOtpTimeRemaining = 300; // 5 minutes
+  adminOtpTimeRemaining = 300;
   const timerEl = document.getElementById('adminOtpTimer');
   const resendBtn = document.getElementById('adminOtpResendBtn');
   resendBtn.disabled = true;
   resendBtn.textContent = 'Resend OTP';
-  
-  adminOtpTimerInterval = setInterval(() => {
-    adminOtpTimeRemaining--;
+  const tick = () => {
     if (adminOtpTimeRemaining <= 0) {
       clearInterval(adminOtpTimerInterval);
-      timerEl.textContent = 'OTP code expired!';
+      timerEl.textContent = 'The code has expired. Please click Resend OTP.';
       resendBtn.disabled = false;
-    } else {
-      const minutes = Math.floor(adminOtpTimeRemaining / 60);
-      const seconds = adminOtpTimeRemaining % 60;
-      timerEl.textContent = `Time remaining: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      return;
     }
-  }, 1000);
+    const m = Math.floor(adminOtpTimeRemaining / 60), sec = adminOtpTimeRemaining % 60;
+    timerEl.textContent = `Time remaining: ${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    if (adminOtpTimeRemaining <= 240) resendBtn.disabled = false;
+    adminOtpTimeRemaining--;
+  };
+  tick();
+  adminOtpTimerInterval = setInterval(tick, 1000);
 }
 
-async function sendOtpEmailViaBackend(otp) {
-  try {
-    const response = await fetch(BACKEND_URL + '/api/auth/send-otp-monolith', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otp })
-    });
-    const data = await response.json();
-    if (data.success) {
-      showToast('Verification code (OTP) sent to your registered email.', 'success');
-    } else {
-      console.error('Failed to send OTP via server:', data.message);
-      showToast('Failed to send OTP email via server.', 'error');
-    }
-  } catch (err) {
-    console.error('Error connecting to backend to send OTP:', err);
-    showToast('Cannot connect to local backend to send OTP. Please check if server is running.', 'error');
-  }
-}
+async function doAdminOtpVerify() {
+  const otp = document.getElementById('adminOtpInput').value.trim();
+  if (!/^\d{6}$/.test(otp)) { showAlert('adminOtpError', 'error', 'Please enter the 6-digit verification code.'); return; }
 
-function doAdminOtpVerify() {
-  const enteredOtp = document.getElementById('adminOtpInput').value.trim();
-  if (!enteredOtp) {
-    showAlert('adminOtpError', 'error', 'Please enter the 6-digit verification code.');
-    return;
-  }
-  
-  if (adminOtpTimeRemaining <= 0) {
-    showAlert('adminOtpError', 'error', 'The OTP has expired. Please click Resend OTP.');
-    return;
-  }
-  
-  if (enteredOtp !== adminOtpCode) {
-    showAlert('adminOtpError', 'error', 'Incorrect verification code. Please try again.');
+  const btn = document.getElementById('adminOtpVerifyBtn');
+  setBusy(btn, true, 'Verifying…');
+  const res = await api('/api/auth/verify-otp', { method: 'POST', body: { loginId: adminOtpLoginId, otp } });
+  if (!res.success) {
+    setBusy(btn, false);
+    showAlert('adminOtpError', 'error', escapeHTML(res.message || 'Verification failed.'));
     document.getElementById('adminOtpInput').value = '';
     return;
   }
-  
-  // Success!
+
+  Session.set({ token: res.token, role: 'admin', loginId: res.user.loginId });
   clearInterval(adminOtpTimerInterval);
+  await loadDataFromBackend(false);
+  setBusy(btn, false);
   closeModal('adminOtpModal');
-  
   document.getElementById('adminUid').value = '';
   document.getElementById('adminPass').value = '';
   document.getElementById('adminOtpInput').value = '';
-  
-  failCounts.admin = 0;
   showPage('admin');
   showAdminSection('dashboard');
   showToast('Logged in successfully as admin.', 'success');
 }
 
-function doAdminOtpResend() {
-  adminOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+async function doAdminOtpResend() {
+  const res = await api('/api/auth/resend-otp', { method: 'POST', body: { loginId: adminOtpLoginId } });
   document.getElementById('adminOtpInput').value = '';
+  if (!res.success) { showAlert('adminOtpError', 'error', escapeHTML(res.message || 'Could not resend the code.')); return; }
   document.getElementById('adminOtpError').innerHTML = '';
-  
+  showToast(res.message, 'success');
   startAdminOtpTimer();
-  sendOtpEmailViaBackend(adminOtpCode);
 }
+
 
 
 // === STUDENT LOGIN ===
 async function doStudentLogin() {
   const loginId = document.getElementById('stuLoginId').value.trim();
   const pass = document.getElementById('stuLoginPass').value;
-  const students = DB.get('students') || [];
-  
-  const archived = DB.get('archived') || [];
-  const isArchived = archived.find(s => s.loginId === loginId);
-  if (isArchived) {
-    showAlert('studentLoginError','error','Your account is no longer active. Please contact school administration.');
+  if (!loginId || !pass) { showAlert('studentLoginError', 'error', 'Please enter your Login ID and Password.'); return; }
+
+  const btn = document.getElementById('studentLoginBtn');
+  setBusy(btn, true, 'Logging in…');
+  const res = await api('/api/auth/student-login', { method: 'POST', body: { loginId, password: pass } });
+  if (!res.success) {
+    setBusy(btn, false);
+    showAlert('studentLoginError', 'error', escapeHTML(res.message || 'Login failed.'));
     return;
   }
 
-  let student = null;
-  let ok = false;
-
-  try {
-    const encodedPass = window.__vault.encodeStudentPassword(pass);
-    const backendRes = await fetch(BACKEND_URL + '/api/auth/verify-credentials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loginId, password: encodedPass, role: 'student' })
-    });
-    const backendData = await backendRes.json();
-    if (backendData.success) {
-      ok = true;
-      const backendStudent = backendData.studentInfo;
-      if (backendStudent) {
-        const existingIdx = students.findIndex(s => s.loginId === loginId);
-        if (existingIdx >= 0) {
-          students[existingIdx] = { ...students[existingIdx], ...backendStudent };
-        } else {
-          students.push(backendStudent);
-        }
-        DB.set('students', students);
-        student = backendStudent;
-      }
-    }
-  } catch (err) {
-    console.warn('Backend unavailable, falling back to local storage authentication:', err);
-  }
-
-  if (!ok) {
-    student = students.find(s => s.loginId === loginId && s.status === 'active');
-    if (!student) {
-      failCounts.student++;
-      if (failCounts.student >= 3) showAlert('studentLoginError','error','Invalid Login ID or Password. Please contact school admin after 3 failed attempts.');
-      else showAlert('studentLoginError','error','Invalid Login ID or Password');
-      return;
-    }
-    if (!window.__vault.verifyStudent(pass, student.password)) {
-      failCounts.student++;
-      if (failCounts.student >= 3) showAlert('studentLoginError','error','Too many failed attempts. Please contact school admin.');
-      else showAlert('studentLoginError','error','Invalid Login ID or Password');
-      return;
-    }
-  }
-
-  if (!student) {
-    student = students.find(s => s.loginId === loginId && s.status === 'active');
-  }
-  
-  failCounts.student = 0;
-  currentStudent = student;
+  Session.set({ token: res.token, role: 'student', studentId: res.student.id });
+  await loadDataFromBackend(false);
+  setBusy(btn, false);
+  currentStudent = (DB.get('students') || []).find(x => x.id === res.student.id) || res.student;
   closeModal('studentLoginModal');
-  document.getElementById('stuLoginId').value=''; document.getElementById('stuLoginPass').value='';
+  document.getElementById('stuLoginId').value = '';
+  document.getElementById('stuLoginPass').value = '';
   loadStudentPortal();
   showPage('student');
 }
 
+// Reopen the portal after a page reload while the tab's session is valid.
+async function restoreSession() {
+  await hydratePhotoCache().catch(() => {});
+  const sess = Session.get();
+  if (sess) {
+    const me = await api('/api/auth/me');
+    if (!me.success) { Session.clear(); clearPrivateData(); }
+  }
+  await loadDataFromBackend(false);
+  const role = Session.role();
+  if (role === 'admin') {
+    showPage('admin');
+    showAdminSection('dashboard');
+  } else if (role === 'student') {
+    currentStudent = (DB.get('students') || []).find(x => x.id === Session.get().studentId) || null;
+    if (currentStudent) { loadStudentPortal(); showPage('student'); }
+    else { Session.clear(); clearPrivateData(); }
+  }
+}
+
 // === STUDENT PORTAL ===
+// Online fee payment is offered only when the server has Razorpay keys.
+let onlinePaymentsEnabled = false;
+
 function loadStudentPortal() {
   if (!currentStudent) return;
+  api('/api/payments/status').then(r => {
+    onlinePaymentsEnabled = Boolean(r.enabled);
+    if (document.getElementById('stuSec-myFees')?.classList.contains('active')) renderStudentFees();
+  });
   const sys = DB.getObj('system', { academicYear: '2026-2027' });
   document.getElementById('stuWelcomeName').textContent = 'Welcome, ' + currentStudent.name;
   document.getElementById('stuWelcomeInfo').textContent = `Student ID: ${currentStudent.id} | Class: ${currentStudent.className} | Section: ${currentStudent.section} | Academic Year: ${sys.academicYear}`;
@@ -1166,20 +917,7 @@ function renderStudentIdCard() {
   setTimeout(() => {
     const qrContainer = document.getElementById('idCardQrContainer');
     if (qrContainer) {
-      const plainPass = window.__vault.decodeStudentPassword(s.password);
-      const maskedPass = maskPassword(plainPass);
-      const qrText = `NOBLE HIGH SCHOOL STUDENT CARD
-==============================
-Student ID: ${s.id || s.loginId}
-Name: ${s.name || ''}
-Class: ${s.className || ''}-${s.section || ''}
-Roll No: ${s.rollNo || ''}
-Father's Name: ${s.fatherName || ''}
-Phone: ${s.phone || ''}
-Emergency Phone: ${s.emergencyPhone || ''}
-Address: ${s.address || ''}
-Academic Year: ${s.academicYear || ''}
-Password: ${maskedPass}`;
+      const qrText = `${BACKEND_URL}/api/students/public-scan/${encodeURIComponent(s.id || s.loginId)}`;
 
       new QRCode(qrContainer, {
         text: qrText,
@@ -1232,7 +970,8 @@ function openStudentNotifDetails(id, element) {
   
   if (!n.read.includes(currentStudent.id)) {
     n.read.push(currentStudent.id);
-    DB.set('notifications', notifications);
+    DB.setLocal('notifications', notifications);
+    api('/api/sync/student/notifications/read', { method: 'POST', body: { ids: [n.id] } });
   }
   
   if (element) {
@@ -1268,14 +1007,18 @@ function markNotifRead(id) {
   const n = notifs.find(x => x.id === id);
   if (n && currentStudent && !n.read.includes(currentStudent.id)) {
     n.read.push(currentStudent.id);
-    DB.set('notifications', notifs);
+    DB.setLocal('notifications', notifs);
+    api('/api/sync/student/notifications/read', { method: 'POST', body: { ids: [id] } });
   }
 }
 
 function markAllNotifsRead() {
+  if (!currentStudent) return;
   const notifs = DB.get('notifications');
-  notifs.forEach(n => { if (currentStudent && !n.read.includes(currentStudent.id)) n.read.push(currentStudent.id); });
-  DB.set('notifications', notifs);
+  const ids = [];
+  notifs.forEach(n => { if (!n.read.includes(currentStudent.id)) { n.read.push(currentStudent.id); ids.push(n.id); } });
+  DB.setLocal('notifications', notifs);
+  if (ids.length) api('/api/sync/student/notifications/read', { method: 'POST', body: { ids } });
   renderStudentNotifs();
 }
 
@@ -1340,7 +1083,9 @@ function renderStudentFees() {
   const sys = DB.getObj('system', {academicYear:'2026-2027'});
   
   let payForm = '';
-  if (balance > 0) {
+  if (balance > 0 && !onlinePaymentsEnabled) {
+    payForm = `<div class="alert alert-info u-mb-16px"><span class="alert-icon">i</span>Fees can be paid at the school office. Call +91 98484 24618 for details.</div>`;
+  } else if (balance > 0) {
     payForm = `
     <div class="complaint-form-wrap" style="margin-bottom:24px; max-width: 100%;">
       <h3 style="font-size:1.05rem;font-weight:700;color:var(--primary-dark);margin-bottom:16px">Pay Fees Online</h3>
@@ -1377,79 +1122,43 @@ function renderStudentFees() {
   document.getElementById('stuFeesContent').innerHTML = html;
 }
 
-function payStudentFeeOnline() {
-  if (typeof Razorpay === 'undefined') {
-    showToast('Razorpay payment gateway is not loaded. Please access the website via http://localhost:5000/ rather than opening the file directly, and check your internet/ad-blocker settings.', 'error');
-    return;
-  }
+async function payStudentFeeOnline() {
   const s = currentStudent;
   if (!s) return;
-  const amountInput = document.getElementById('studentPayAmount');
-  const amount = parseFloat(amountInput.value);
-  
-  if (!amount || amount <= 0) {
-    showToast('Please enter a valid amount to pay.', 'error');
+  const amount = Math.round(parseFloat(document.getElementById('studentPayAmount').value));
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount to pay.', 'error'); return; }
+
+  const order = await api('/api/payments/order', { method: 'POST', body: { amount } });
+  if (!order.success) { showToast(order.message || 'Could not start the payment.', 'error'); return; }
+  try { await loadScriptOnce(LIB_URLS.razorpay); } catch (e) {}
+  if (typeof Razorpay === 'undefined') {
+    showToast('The payment window could not load. Please check your internet connection or ad-blocker and try again.', 'error');
     return;
   }
-  
-  const fees = DB.get('fees') || [];
-  const myFees = fees.filter(f => f.studentId === s.id);
-  const totalPaid = myFees.reduce((sum, f) => sum + f.amount, 0);
-  const balanceDue = (s.totalFee || 0) - totalPaid;
-  
-  if (amount > balanceDue) {
-    showToast(`Amount cannot exceed the pending due balance of ₹${balanceDue.toLocaleString()}.`, 'error');
-    return;
-  }
-  
-  const options = {
-    key: "rzp_test_SxCqJDSjXRtfe9",
-    amount: amount * 100, // paise
-    currency: "INR",
-    name: "Noble High School",
-    description: "School Fee Payment",
-    theme: {
-      color: "#2552a0"
-    },
-    prefill: {
-      name: s.name,
-      contact: s.phone || ""
-    },
-    handler: function (response) {
-      const now = new Date();
-      const date = now.toISOString();
-      const pad = (n) => String(n).padStart(2, '0');
-      const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}`;
-      const newBalance = Math.max(0, balanceDue - amount);
-      const receipt = 'REC-' + dateStr + '-' + String(fees.length+1).padStart(5,'0');
-      const sys = DB.getObj('system', { academicYear: '2026-2027' });
-      
-      const feeRecord = {
-        id: receipt,
-        receiptNo: receipt,
-        receipt: receipt,
-        studentId: s.id,
-        date,
-        amount,
-        method: 'Online',
-        mode: 'Online',
-        reference: response.razorpay_payment_id,
-        balance: newBalance,
-        academicYear: s.academicYear || sys.academicYear
-      };
-      
-      fees.push(feeRecord);
-      DB.set('fees', fees);
-      showToast(`Payment of ₹${amount.toLocaleString()} successful! Receipt: ${receipt}`);
+
+  const rzp = new Razorpay({
+    key: order.keyId,
+    order_id: order.orderId,
+    amount: order.amount * 100,
+    currency: 'INR',
+    name: 'Noble High School',
+    description: 'School Fee Payment',
+    theme: { color: '#2552a0' },
+    prefill: { name: order.name, contact: order.phone },
+    handler: async (response) => {
+      const res = await api('/api/payments/verify', {
+        method: 'POST',
+        body: { orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature }
+      });
+      if (!res.success) { showToast(res.message || 'Payment could not be verified.', 'error'); return; }
+      const fees = DB.get('fees') || [];
+      fees.push(res.fee);
+      DB.setLocal('fees', fees);
+      showToast(`Payment of ₹${res.fee.amount.toLocaleString()} successful! Receipt: ${res.fee.receipt}`);
       renderStudentFees();
-      
-      setTimeout(() => {
-        downloadFeeReceiptPDF(receipt);
-      }, 500);
+      setTimeout(() => downloadFeeReceiptPDF(res.fee.receipt), 500);
     }
-  };
-  
-  const rzp = new Razorpay(options);
+  });
   rzp.open();
 }
 
@@ -1488,6 +1197,9 @@ function renderStudentComplaints() {
 
 function studentLogout() {
   currentStudent = null;
+  Session.clear();
+  clearPrivateData();
+  initSampleData();
   // Clear all login fields so next login starts fresh
   ['stuLoginId','stuLoginPass','adminUid','adminPass'].forEach(id => {
     const el = document.getElementById(id);
@@ -1552,6 +1264,9 @@ function showAdminSection(name) {
 }
 
 function adminLogout() {
+  Session.clear();
+  clearPrivateData();
+  initSampleData();
   // Clear all login input fields so next login starts fresh
   ['stuLoginId','stuLoginPass','adminUid','adminPass'].forEach(id => {
     const el = document.getElementById(id);
@@ -1621,52 +1336,62 @@ function closeNavDrawer() {
   if (overlay) overlay.classList.remove('active');
 }
 
-// Highlight the matching link in the public top-nav strip and de-highlight others.
-// Called from each navGo*() function. Silent no-op if the strip isn't in the DOM
-// (e.g. on the admin or student page where the public nav is hidden).
+// Highlight the matching link in the public top-nav strip (and mark it for
+// screen readers). No-op on portal pages, where the strip is hidden.
 function setActiveTopNav(activeId) {
   const links = document.querySelectorAll('.top-nav-link');
   if (!links.length) return;
-  links.forEach(l => l.classList.remove('active'));
+  links.forEach(l => { l.classList.remove('active'); l.removeAttribute('aria-current'); });
   const el = document.getElementById(activeId);
-  if (el) el.classList.add('active');
+  if (el) { el.classList.add('active'); el.setAttribute('aria-current', 'page'); }
+}
+
+// Nav links are real <a href> elements; intercept plain left-clicks so the page
+// switches without a reload, and let modified clicks (new tab etc.) through.
+function navLink(event, fn) {
+  if (event && (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1)) return true;
+  if (event) event.preventDefault();
+  fn();
+  return false;
 }
 
 function navGoHome() {
   closeNavDrawer();
   showPage('landing');
-  setActiveTopNav('topNavHome');
-  // Scroll to top of landing page
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function navGoGallery() {
   closeNavDrawer();
-  // Open the dedicated gallery page
   showPage('gallery');
-  setActiveTopNav('topNavGallery');
   renderGallery();
 }
 
 function navGoComplaint() {
   closeNavDrawer();
   showPage('complaint');
-  setActiveTopNav('topNavComplaint');
-  // Clear any prior success message and form fields when reopening
   const su = document.getElementById('complaintSuccess'); if (su) su.innerHTML = '';
 }
 
 function navGoFaculty() {
   closeNavDrawer();
   showPage('faculty');
-  setActiveTopNav('topNavFaculty');
   renderFacultyPublic();
 }
 
 function navGoContact() {
   closeNavDrawer();
   showPage('contact');
-  setActiveTopNav('topNavContact');
+}
+
+// Hero "Apply for Admission" button: jump to the form and focus its first field.
+function goToAdmissionForm(event) {
+  if (event) event.preventDefault();
+  if (currentPage !== 'landing') navGoHome();
+  const section = document.getElementById('admissionSection');
+  if (!section) return;
+  section.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  const first = document.getElementById('adm_stuName');
+  if (first) setTimeout(() => first.focus({ preventScroll: true }), 400);
 }
 
 // === DASHBOARD ===
@@ -1889,7 +1614,7 @@ function saveStudentForm(editId) {
     if (idx !== -1) {
       const photo = window._pendingPhoto !== undefined ? window._pendingPhoto : students[idx].photo;
       // Keep existing encoded password if the field was left blank.
-      const password = passwordPlain ? window.__vault.encodeStudentPassword(passwordPlain) : students[idx].password;
+      const password = passwordPlain ? StudentPassword.encode(passwordPlain) : students[idx].password;
       // CRITICAL: id and loginId both equal the admin-entered Login ID
       students[idx] = { ...students[idx], id:loginId, loginId, name, dob, rollNo:roll, className:cls, section:sec, password, fatherName:father, phone, emergencyPhone:eph, aadhaar, apaar, address, totalFee:fee, academicYear:year, photo, joinDate };
       try {
@@ -1906,7 +1631,7 @@ function saveStudentForm(editId) {
   } else {
     // CRITICAL: Student ID = Login ID (whatever admin entered) — never auto-generate
     const photo = window._pendingPhoto || null;
-    const password = window.__vault.encodeStudentPassword(passwordPlain);
+    const password = StudentPassword.encode(passwordPlain);
     const newStudent = { id:loginId, name, dob, rollNo:roll, className:cls, section:sec, loginId, password, fatherName:father, phone, emergencyPhone:eph, aadhaar, apaar, address, totalFee:fee, academicYear:year, status:'active', joinDate, photo };
     students.push(newStudent);
     try {
@@ -2748,11 +2473,11 @@ function renderComplaintsTable() {
   if (!el) return;
   el.innerHTML = filtered.length ? `<table><thead><tr><th>Complaint ID</th><th>Date</th><th>Student Name</th><th>Parent</th><th>Student ID</th><th>Phone</th><th>Status</th><th>Action</th></tr></thead>
   <tbody>${filtered.map(c => `<tr>
-    <td><code>${c.id}</code></td><td>${fmtDate(c.date)}</td><td><strong>${c.stuName}</strong></td><td>${c.parName}</td><td>${c.stuId}</td><td>${c.phone}</td>
+    <td><code>${escapeHTML(c.id)}</code></td><td>${fmtDate(c.date)}</td><td><strong>${escapeHTML(c.stuName)}</strong></td><td>${escapeHTML(c.parName)}</td><td>${escapeHTML(c.stuId)}</td><td>${escapeHTML(c.phone)}</td>
     <td><span class="badge badge-${c.status.toLowerCase()}">${c.status==='Resolved'?'✓ ':c.status==='Pending'?'⏳ ':''}${c.status}</span></td>
     <td>
-      <button class="btn btn-secondary btn-sm" onclick="viewComplaint('${c.id}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></span> View</button>
-      ${c.status==='Pending'?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="resolveComplaint('${c.id}')">✓ Resolve</button>`:''}
+      <button class="btn btn-secondary btn-sm" onclick="viewComplaint('${escapeHTML(c.id)}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></span> View</button>
+      ${c.status==='Pending'?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="resolveComplaint('${escapeHTML(c.id)}')">✓ Resolve</button>`:''}
     </td>
   </tr>`).join('')}</tbody></table>`
   : '<div class="empty-state"><div class="icon"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg></span></div><p>No complaints found</p></div>';
@@ -2764,17 +2489,17 @@ function viewComplaint(id) {
   document.getElementById('detailModalTitle').textContent = 'Complaint: ' + c.id;
   document.getElementById('detailModalBody').innerHTML = `
     <div class="result-card"><div class="rc-row">
-      <div class="rc-item"><label>Student Name</label><span>${c.stuName}</span></div>
-      <div class="rc-item"><label>Parent Name</label><span>${c.parName}</span></div>
-      <div class="rc-item"><label>Student ID</label><span>${c.stuId}</span></div>
-      <div class="rc-item"><label>Phone</label><span>${c.phone}</span></div>
+      <div class="rc-item"><label>Student Name</label><span>${escapeHTML(c.stuName)}</span></div>
+      <div class="rc-item"><label>Parent Name</label><span>${escapeHTML(c.parName)}</span></div>
+      <div class="rc-item"><label>Student ID</label><span>${escapeHTML(c.stuId)}</span></div>
+      <div class="rc-item"><label>Phone</label><span>${escapeHTML(c.phone)}</span></div>
       <div class="rc-item"><label>Date Submitted</label><span>${fmtDate(c.date)}</span></div>
       <div class="rc-item"><label>Status</label><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></div>
     </div></div>
-    <div class="form-group"><label class="form-label">Complaint Details</label><div style="background:var(--bg-light);border-radius:8px;padding:14px;border:1px solid var(--border);line-height:1.6">${c.details}</div></div>
-    <div class="form-group"><label class="form-label">Admin Notes (Internal)</label><textarea class="form-control" id="compAdminNotes" rows="3" placeholder="Internal notes...">${c.adminNotes||''}</textarea></div>
-    ${c.status==='Pending'?`<button class="btn btn-success" onclick="resolveComplaint('${c.id}');closeModal('detailModal')">✓ Mark as Resolved</button>`:`<p style="color:var(--success);font-weight:600">✓ Resolved on ${fmtDate(c.resolvedDate)}</p>`}
-    <button class="btn btn-secondary" style="margin-left:${c.status==='Pending'?'10':'0'}px" onclick="saveCompNotes('${c.id}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg></span> Save Notes</button>
+    <div class="form-group"><label class="form-label">Complaint Details</label><div style="background:var(--bg-light);border-radius:8px;padding:14px;border:1px solid var(--border);line-height:1.6">${escapeHTML(c.details)}</div></div>
+    <div class="form-group"><label class="form-label">Admin Notes (Internal)</label><textarea class="form-control" id="compAdminNotes" rows="3" placeholder="Internal notes...">${escapeHTML(c.adminNotes||'')}</textarea></div>
+    ${c.status==='Pending'?`<button class="btn btn-success" onclick="resolveComplaint('${escapeHTML(c.id)}');closeModal('detailModal')">✓ Mark as Resolved</button>`:`<p style="color:var(--success);font-weight:600">✓ Resolved on ${fmtDate(c.resolvedDate)}</p>`}
+    <button class="btn btn-secondary" style="margin-left:${c.status==='Pending'?'10':'0'}px" onclick="saveCompNotes('${escapeHTML(c.id)}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg></span> Save Notes</button>
   `;
   document.getElementById('detailModal').classList.add('active');
 }
@@ -2823,16 +2548,16 @@ function renderAdmissionsTable() {
       <th>Father Name</th><th>Phone 1</th><th>Status</th><th>Action</th>
     </tr></thead>
     <tbody>${rows.map(a => `<tr>
-      <td><code>${a.id}</code></td>
+      <td><code>${escapeHTML(a.id)}</code></td>
       <td>${fmtDate(a.submittedAt)}</td>
-      <td><strong>${a.stuName}</strong></td>
-      <td>${a.classToJoin}</td>
-      <td>${a.fatherName}</td>
-      <td>${a.phone1}</td>
+      <td><strong>${escapeHTML(a.stuName)}</strong></td>
+      <td>${escapeHTML(a.classToJoin)}</td>
+      <td>${escapeHTML(a.fatherName)}</td>
+      <td>${escapeHTML(a.phone1)}</td>
       <td><span class="badge badge-${a.status === 'Contacted' ? 'success' : 'pending'}">${a.status === 'Contacted' ? '✓ ' : '⏳ '}${a.status}</span></td>
       <td>
-        <button class="btn btn-secondary btn-sm" onclick="viewAdmission('${a.id}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></span> View</button>
-        ${a.status === 'Pending' ? `<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="markAdmissionContacted('${a.id}')">✓ Mark Contacted</button>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="viewAdmission('${escapeHTML(a.id)}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></span> View</button>
+        ${a.status === 'Pending' ? `<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="markAdmissionContacted('${escapeHTML(a.id)}')">✓ Mark Contacted</button>` : ''}
       </td>
     </tr>`).join('')}</tbody></table>`;
 }
@@ -2843,24 +2568,24 @@ function viewAdmission(id) {
   document.getElementById('detailModalTitle').textContent = 'Admission Request: ' + a.id;
   document.getElementById('detailModalBody').innerHTML = `
     <div class="result-card"><div class="rc-row">
-      <div class="rc-item"><label>Acknowledgement No</label><span>${a.id}</span></div>
+      <div class="rc-item"><label>Acknowledgement No</label><span>${escapeHTML(a.id)}</span></div>
       <div class="rc-item"><label>Submitted</label><span>${fmtDate(a.submittedAt)}</span></div>
-      <div class="rc-item"><label>Student Name</label><span>${a.stuName}</span></div>
+      <div class="rc-item"><label>Student Name</label><span>${escapeHTML(a.stuName)}</span></div>
       <div class="rc-item"><label>Date of Birth</label><span>${fmtDate(a.dob)}</span></div>
-      <div class="rc-item"><label>Class to Join</label><span>${a.classToJoin}</span></div>
-      <div class="rc-item"><label>Father's Name</label><span>${a.fatherName}</span></div>
-      <div class="rc-item"><label>Mother's Name</label><span>${a.motherName}</span></div>
-      <div class="rc-item"><label>Phone 1</label><span>${a.phone1}</span></div>
-      <div class="rc-item"><label>Phone 2</label><span>${a.phone2}</span></div>
+      <div class="rc-item"><label>Class to Join</label><span>${escapeHTML(a.classToJoin)}</span></div>
+      <div class="rc-item"><label>Father's Name</label><span>${escapeHTML(a.fatherName)}</span></div>
+      <div class="rc-item"><label>Mother's Name</label><span>${escapeHTML(a.motherName)}</span></div>
+      <div class="rc-item"><label>Phone 1</label><span>${escapeHTML(a.phone1)}</span></div>
+      <div class="rc-item"><label>Phone 2</label><span>${escapeHTML(a.phone2)}</span></div>
       <div class="rc-item"><label>Status</label><span class="badge badge-${a.status === 'Contacted' ? 'success' : 'pending'}">${a.status}</span></div>
     </div></div>
-    <div class="form-group"><label class="form-label">Current Address</label><div style="background:var(--bg-light);border-radius:8px;padding:12px;border:1px solid var(--border)">${a.address || '—'}</div></div>
-    <div class="form-group"><label class="form-label">Previous School</label><div style="background:var(--bg-light);border-radius:8px;padding:12px;border:1px solid var(--border)">${a.prevSchool || '—'}</div></div>
-    <div class="form-group"><label class="form-label">Admin Notes (Internal)</label><textarea class="form-control" id="admAdminNotes" rows="3" placeholder="Internal notes...">${a.adminNotes || ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Current Address</label><div style="background:var(--bg-light);border-radius:8px;padding:12px;border:1px solid var(--border)">${escapeHTML(a.address || '—')}</div></div>
+    <div class="form-group"><label class="form-label">Previous School</label><div style="background:var(--bg-light);border-radius:8px;padding:12px;border:1px solid var(--border)">${escapeHTML(a.prevSchool || '—')}</div></div>
+    <div class="form-group"><label class="form-label">Admin Notes (Internal)</label><textarea class="form-control" id="admAdminNotes" rows="3" placeholder="Internal notes...">${escapeHTML(a.adminNotes || '')}</textarea></div>
     ${a.status === 'Pending'
-      ? `<button class="btn btn-success" onclick="markAdmissionContacted('${a.id}'); closeModal('detailModal')">✓ Mark Contacted</button>`
+      ? `<button class="btn btn-success" onclick="markAdmissionContacted('${escapeHTML(a.id)}'); closeModal('detailModal')">✓ Mark Contacted</button>`
       : `<p style="color:var(--success);font-weight:600">✓ Contacted on ${fmtDate(a.contactedAt)}</p>`}
-    <button class="btn btn-secondary" style="margin-left:${a.status === 'Pending' ? '10' : '0'}px" onclick="saveAdmissionNotes('${a.id}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg></span> Save Notes</button>
+    <button class="btn btn-secondary" style="margin-left:${a.status === 'Pending' ? '10' : '0'}px" onclick="saveAdmissionNotes('${escapeHTML(a.id)}')"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg></span> Save Notes</button>
   `;
   document.getElementById('detailModal').classList.add('active');
 }
@@ -4684,10 +4409,13 @@ function submitLeaveApplication() {
   if (to < from) { showToast('To date cannot be before From date','error'); return; }
   showConfirm('Confirm Leave Application',
     `Apply for leave:\nFrom: ${fmtDate(from)}\nTo: ${fmtDate(to)}\nReason: ${reason||'Not specified'}\n\nSubmit?`,
-    'Submit', 'btn-primary', ()=>{
+    'Submit', 'btn-primary', async ()=>{
+    const res = await api('/api/sync/student/leave', { method: 'POST', body: { fromDate: from, toDate: to, reason } });
+    if (!res.success) { showToast(res.message || 'Could not submit leave.', 'error'); return; }
     const leaves = DB.get('leaves')||[];
-    leaves.push({ id:'LV'+Date.now(), studentId:s.id, studentName:s.name, className:s.className, section:s.section, fromDate:from, toDate:to, reason, appliedOn:getToday(), status:'pending' });
-    DB.set('leaves',leaves);
+    leaves.push(res.leave);
+    DB.setLocal('leaves',leaves);
+    if (typeof renderStuLeaveHistory === 'function') renderStuLeaveHistory();
     document.getElementById('stuLeaveFrom').value='';
     document.getElementById('stuLeaveTo').value='';
     document.getElementById('stuLeaveReason').value='';
@@ -5214,70 +4942,26 @@ async function handleReAuthRequestOTP() {
   const uid = document.getElementById('reAuthUid').value.trim();
   const pass = document.getElementById('reAuthPass').value;
   if (!uid || !pass) { showAlert('reAuthError', 'error', 'Please enter your User ID and Password.'); return; }
-  
-  // Verify User ID & Password
-  let ok = false;
-  try {
-    const res = await fetch(BACKEND_URL + '/api/auth/verify-credentials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loginId: uid, password: pass, role: 'admin' })
-    });
-    const data = await res.json();
-    if (data.success) ok = true;
-  } catch (err) {
-    console.warn('Backend unavailable, verifying locally:', err);
-    ok = await window.__vault.verifyAdmin(uid, pass, null);
-  }
-  
-  if (!ok) {
-    showAlert('reAuthError', 'error', 'Invalid User ID or Password.');
-    return;
-  }
-  
-  // Generate and Send OTP
-  reAuthOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  const res = await api('/api/auth/reauth/request', { method: 'POST', body: { loginId: uid, password: pass } });
+  if (!res.success) { showAlert('reAuthError', 'error', escapeHTML(res.message || 'Verification failed.')); return; }
+
   document.getElementById('reAuthError').innerHTML = '';
-  showToast('Sending OTP verification code to registered admin email...', 'info');
-  
-  try {
-    const sendRes = await fetch(BACKEND_URL + '/api/auth/send-otp-monolith', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otp: reAuthOtpCode })
-    });
-    const sendData = await sendRes.json();
-    if (sendData.success) {
-      showToast('OTP code sent successfully to registered admin email.', 'success');
-      
-      // Update UI to OTP mode
-      document.getElementById('reAuthMessage').textContent = 'An OTP verification code has been sent to your registered admin email. Please enter it below to proceed.';
-      document.getElementById('reAuthUidGroup').style.display = 'none';
-      document.getElementById('reAuthPassGroup').style.display = 'none';
-      document.getElementById('reAuthOtpGroup').style.display = 'block';
-      
-      const actionBtn = document.getElementById('btnReAuthAction');
-      actionBtn.textContent = 'Verify & Proceed';
-      actionBtn.setAttribute('onclick', 'doReAuth()');
-    } else {
-      showAlert('reAuthError', 'error', 'Failed to send OTP email: ' + sendData.message);
-    }
-  } catch (err) {
-    console.error(err);
-    showAlert('reAuthError', 'error', 'Cannot connect to backend to send OTP email.');
-  }
+  document.getElementById('reAuthMessage').textContent = res.message + ' Enter it below to continue.';
+  document.getElementById('reAuthUidGroup').style.display = 'none';
+  document.getElementById('reAuthPassGroup').style.display = 'none';
+  document.getElementById('reAuthOtpGroup').style.display = 'block';
+  const actionBtn = document.getElementById('btnReAuthAction');
+  actionBtn.textContent = 'Verify & Proceed';
+  actionBtn.setAttribute('onclick', 'doReAuth()');
 }
 
 async function doReAuth() {
   const otp = document.getElementById('reAuthOtp').value.trim();
   if (!otp) { showAlert('reAuthError', 'error', 'Please enter the 6-digit OTP code.'); return; }
-  
-  if (otp !== reAuthOtpCode) {
-    showAlert('reAuthError', 'error', 'Incorrect OTP code. Please try again.');
-    return;
-  }
-  
-  // Success! Close modal and execute callback
+  const res = await api('/api/auth/reauth/verify', { method: 'POST', body: { otp } });
+  if (!res.success) { showAlert('reAuthError', 'error', escapeHTML(res.message || 'Incorrect code.')); return; }
+
   closeModal('reAuthModal');
   if (reAuthCallback) {
     reAuthCallback();
@@ -5325,93 +5009,46 @@ async function handleResetCredsRequestOTP() {
   const uid = document.getElementById('verifyUid').value.trim();
   const pass = document.getElementById('verifyPass').value;
   if (!uid || !pass) { showAlert('resetStep1Error', 'error', 'Please enter your current User ID and Password.'); return; }
-  
-  // Verify credentials first (without OTP)
-  let ok = false;
-  try {
-    const res = await fetch(BACKEND_URL + '/api/auth/verify-credentials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loginId: uid, password: pass, role: 'admin' })
-    });
-    const data = await res.json();
-    if (data.success) ok = true;
-  } catch (err) {
-    console.warn('Backend unavailable, verifying locally:', err);
-    ok = await window.__vault.verifyAdmin(uid, pass, null);
-  }
-  
-  if (!ok) {
-    showAlert('resetStep1Error', 'error', 'Invalid User ID or Password.');
-    return;
-  }
-  
-  // Credentials verified! Generate and send OTP code
-  resetCredsOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  const res = await api('/api/auth/reauth/request', { method: 'POST', body: { loginId: uid, password: pass } });
+  if (!res.success) { showAlert('resetStep1Error', 'error', escapeHTML(res.message || 'Verification failed.')); return; }
+
   document.getElementById('resetStep1Error').innerHTML = '';
-  showToast('Sending OTP verification code to registered admin email...', 'info');
-  
-  try {
-    const sendRes = await fetch(BACKEND_URL + '/api/auth/send-otp-monolith', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otp: resetCredsOtpCode })
-    });
-    const sendData = await sendRes.json();
-    if (sendData.success) {
-      showToast('OTP code sent successfully to registered admin email.', 'success');
-      
-      // Update UI to OTP mode
-      document.getElementById('resetStep1Msg').textContent = 'An OTP verification code has been sent to your registered admin email. Please enter it below to proceed.';
-      document.getElementById('resetUidGroup').style.display = 'none';
-      document.getElementById('resetPassGroup').style.display = 'none';
-      document.getElementById('resetOtpGroup').style.display = 'block';
-      
-      const actionBtn = document.getElementById('btnResetStep1Action');
-      actionBtn.textContent = 'Verify OTP & Continue';
-      actionBtn.setAttribute('onclick', 'verifyResetCreds()');
-    } else {
-      showAlert('resetStep1Error', 'error', 'Failed to send OTP email: ' + sendData.message);
-    }
-  } catch (err) {
-    console.error(err);
-    showAlert('resetStep1Error', 'error', 'Cannot connect to backend to send OTP email.');
-  }
+  document.getElementById('resetStep1Msg').textContent = res.message + ' Enter it below to continue.';
+  document.getElementById('resetUidGroup').style.display = 'none';
+  document.getElementById('resetPassGroup').style.display = 'none';
+  document.getElementById('resetOtpGroup').style.display = 'block';
+  const actionBtn = document.getElementById('btnResetStep1Action');
+  actionBtn.textContent = 'Verify OTP & Continue';
+  actionBtn.setAttribute('onclick', 'verifyResetCreds()');
 }
 
 async function verifyResetCreds() {
   const otp = document.getElementById('verifyOtp').value.trim();
   if (!otp) { showAlert('resetStep1Error', 'error', 'Please enter the 6-digit OTP code.'); return; }
-  
-  if (otp !== resetCredsOtpCode) {
-    showAlert('resetStep1Error', 'error', 'Incorrect OTP code. Please try again.');
-    return;
-  }
-  
-  // Success! Cache password for step 2 rotation, and transition step
-  _resetStep1Pwd = document.getElementById('verifyPass').value;
+  const res = await api('/api/auth/reauth/verify', { method: 'POST', body: { otp } });
+  if (!res.success) { showAlert('resetStep1Error', 'error', escapeHTML(res.message || 'Incorrect code.')); return; }
+
+  _reauthToken = res.reauthToken;
   document.getElementById('resetStep1').style.display = 'none';
   document.getElementById('resetStep2').style.display = 'block';
   showToast('Identity verified. Please set your new credentials.');
 }
 
-// Cached after Step 1 succeeds, used when Step 2 calls vault.rotateAdmin.
-// Cleared as soon as the rotation is committed.
-let _resetStep1Pwd = '';
+// Short-lived token from Step 1; the server requires it to change credentials.
+let _reauthToken = '';
 
 async function resetCredential(type) {
-  let newVal, confirmVal, fieldName, vaultField;
+  let newVal, confirmVal, fieldName;
 
   if (type === 'uid') {
     newVal = document.getElementById('newUid')?.value.trim();
     confirmVal = document.getElementById('confirmUid')?.value.trim();
     fieldName = 'User ID';
-    vaultField = 'uid';
   } else if (type === 'password') {
     newVal = document.getElementById('newPass')?.value;
     confirmVal = document.getElementById('confirmPass')?.value;
     fieldName = 'Password';
-    vaultField = 'pwd';
   }
 
   if (!newVal || newVal.length < 6) { showToast(fieldName+' must be at least 6 characters','error'); return; }
@@ -5419,21 +5056,13 @@ async function resetCredential(type) {
   if (type === 'password' && !(/[A-Z]/.test(newVal) && /[a-z]/.test(newVal) && /\d/.test(newVal) && /[^A-Za-z0-9]/.test(newVal) && newVal.length >= 8)) {
     showToast('Password must be min 8 chars with uppercase, lowercase, number, and special char','error'); return;
   }
-  // Reject "same as current" — the vault refuses to verify the old hash AGAIN
-  // for the new value (so we know they're different). We don't compare hashes
-  // directly because we don't have access to the current one; we ask the vault
-  // to verify the new value as the current password — if it succeeds, they're
-  // identical.
-  if (type === 'password' && (await window.__vault.verifyAdminPwd(newVal))) {
-    showToast('New password cannot be same as current','error'); return;
-  }
 
   showConfirm(`Update ${fieldName}`, `You are about to change your ${fieldName}. Please save your new credentials securely. Are you sure?`, `Update ${fieldName}`, 'btn-primary', async () => {
-    if (!_resetStep1Pwd) { showToast('Please re-verify your credentials first.', 'error'); return; }
-    const rotated = await window.__vault.rotateAdmin(_resetStep1Pwd, vaultField, newVal);
-    if (!rotated) { showToast('Verification failed — credentials not changed.', 'error'); return; }
-    // After password rotation, the cached step-1 password becomes invalid.
-    if (type === 'password') _resetStep1Pwd = newVal;
+    if (!_reauthToken) { showToast('Please re-verify your credentials first.', 'error'); return; }
+    const body = { reauthToken: _reauthToken };
+    if (type === 'uid') body.newLoginId = newVal; else body.newPassword = newVal;
+    const res = await api('/api/auth/credentials', { method: 'PUT', body });
+    if (!res.success) { showToast(res.message || 'Credentials were not changed.', 'error'); return; }
     showToast(`${fieldName} successfully updated!`);
     if (type === 'uid') { document.getElementById('newUid').value=''; document.getElementById('confirmUid').value=''; }
     else if (type === 'password') { document.getElementById('newPass').value=''; document.getElementById('confirmPass').value=''; }
@@ -5442,56 +5071,30 @@ async function resetCredential(type) {
     const banner = document.createElement('div');
     banner.className = 'countdown-banner';
     banner.id = 'logoutCountdown';
-    banner.innerHTML = `?? Credentials updated. You will be logged out in <strong id="cdTimer">${countdown}</strong> seconds. Please save your new credentials. <button class="btn btn-secondary btn-sm" style="margin-left:10px" onclick="clearInterval(window._cdInterval);document.getElementById('logoutCountdown').remove()">Dismiss</button>`;
+    banner.innerHTML = `Credentials updated. You will be logged out in <strong id="cdTimer">${countdown}</strong> seconds. Please save your new credentials. <button class="btn btn-secondary btn-sm" style="margin-left:10px" onclick="clearInterval(window._cdInterval);document.getElementById('logoutCountdown').remove()">Dismiss</button>`;
     document.getElementById('section-resetCreds').prepend(banner);
     window._cdInterval = setInterval(()=>{ countdown--; const t=document.getElementById('cdTimer'); if(t)t.textContent=countdown; if(countdown<=0){ clearInterval(window._cdInterval); adminLogout(); } },1000);
   });
 }
 
 // === COMPLAINT SUBMISSION (Public) ===
-function submitComplaint() {
-  const stuName = document.getElementById('c_stuName').value.trim();
-  const parName = document.getElementById('c_parName').value.trim();
-  const stuId = document.getElementById('c_stuId').value.trim();
-  const phone = document.getElementById('c_phone').value.trim();
-  const details = document.getElementById('c_details').value.trim();
-  
-  if (!stuName||!parName||!stuId||!phone||!details) { showToast('Please fill all required fields','error'); return; }
-  if (phone.length !== 10 || !/^\d+$/.test(phone)) { showToast('Phone must be 10 digits','error'); return; }
-  
-  // ADDED: Validate Student Login ID actually matches an active student.
-  // This stops random IDs from creating "ghost" complaints in the wrong student portal.
-  const students = DB.get('students');
-  const matched = students.find(s => s.status==='active' && (s.loginId === stuId || s.id === stuId));
-  if (!matched) {
-    document.getElementById('complaintSuccess').innerHTML =
-      `<div class="alert alert-error"><span class="alert-icon">!</span>The Student Login ID you entered does not match any registered student. Please check with the school for the correct Login ID before resubmitting.</div>`;
-    showToast('Invalid Student Login ID — complaint not accepted','error');
-    return;
-  }
-  // Make sure the student name on the complaint also resembles the registered student
-  // (soft check — case-insensitive containment in either direction)
-  const enteredName = stuName.toLowerCase();
-  const realName = (matched.name||'').toLowerCase();
-  if (realName && enteredName && !realName.includes(enteredName) && !enteredName.includes(realName)) {
-    document.getElementById('complaintSuccess').innerHTML =
-      `<div class="alert alert-error"><span class="alert-icon">!</span>The student name does not match our records for this Login ID. Please verify and try again.</div>`;
-    showToast('Student name does not match Login ID','error');
-    return;
-  }
-  
-  const complaints = DB.get('complaints');
-  const date = new Date();
-  const dateStr = date.toISOString().slice(0,10).replace(/-/g,'');
-  const seq = String(complaints.length+1).padStart(3,'0');
-  const id = `COMP-${dateStr}-${seq}`;
-  // ADDED: store the canonical Student ID so the complaint shows in the correct student portal
-  complaints.push({ id, stuName, parName, stuId: matched.id, loginIdEntered: stuId, phone, details, date:date.toISOString(), status:'Pending', adminNotes:'' });
-  DB.set('complaints', complaints);
-  
-  document.getElementById('c_stuName').value=''; document.getElementById('c_parName').value=''; document.getElementById('c_stuId').value=''; document.getElementById('c_phone').value=''; document.getElementById('c_details').value='';
-  document.getElementById('complaintSuccess').innerHTML=`<div class="alert alert-success"><span class="alert-icon">✓</span>Complaint submitted successfully! Your Complaint ID is <strong>${id}</strong>. We will review it shortly.</div>`;
-  setTimeout(()=>{ if(document.getElementById('complaintSuccess'))document.getElementById('complaintSuccess').innerHTML=''; },8000);
+async function submitComplaint() {
+  const val = id => document.getElementById(id).value.trim();
+  const body = { stuName: val('c_stuName'), parName: val('c_parName'), stuId: val('c_stuId'), phone: val('c_phone'), details: val('c_details') };
+  const out = document.getElementById('complaintSuccess');
+  const fail = msg => { out.innerHTML = `<div class="alert alert-error" role="alert"><span class="alert-icon">!</span>${escapeHTML(msg)}</div>`; };
+
+  if (!body.stuName || !body.parName || !body.stuId || !body.phone || !body.details) { fail('Please fill all required fields.'); return; }
+  if (!/^\d{10}$/.test(body.phone)) { fail('Phone number must be exactly 10 digits.'); return; }
+
+  const btn = document.getElementById('complaintSubmitBtn');
+  setBusy(btn, true, 'Submitting…');
+  const res = await api('/api/sync/public/complaint', { method: 'POST', body });
+  setBusy(btn, false);
+  if (!res.success) { fail(res.message || 'Could not submit. Please call the school office.'); return; }
+
+  ['c_stuName','c_parName','c_stuId','c_phone','c_details'].forEach(id => { document.getElementById(id).value = ''; });
+  out.innerHTML = `<div class="alert alert-success" role="status"><span class="alert-icon">✓</span>Thank you. Your request has been received. Your reference number is <strong>${escapeHTML(res.id)}</strong>. The school office will review it and contact you.</div>`;
 }
 
 // === ADMISSION SUBMISSION (Public) ===
@@ -5499,70 +5102,34 @@ function submitComplaint() {
 // data to the 'admissions' DB list with status 'Pending', generates an
 // acknowledgement number (ADM-YYYYMMDD-NNN), and shows the parent a popup
 // confirming admin will contact them.
-function submitAdmission() {
-  const stuName = document.getElementById('adm_stuName').value.trim();
-  const dob = document.getElementById('adm_dob').value;
-  const fatherName = document.getElementById('adm_fatherName').value.trim();
-  const motherName = document.getElementById('adm_motherName').value.trim();
-  const phone1 = document.getElementById('adm_phone1').value.trim();
-  const phone2 = document.getElementById('adm_phone2').value.trim();
-  const cls = document.getElementById('adm_class').value;
-  const prevSchool = document.getElementById('adm_prevSchool').value.trim();
-  const address = document.getElementById('adm_address').value.trim();
-  const successEl = document.getElementById('admissionSuccess');
+async function submitAdmission() {
+  const val = id => document.getElementById(id).value.trim();
+  const body = {
+    stuName: val('adm_stuName'), dob: val('adm_dob'), fatherName: val('adm_fatherName'), motherName: val('adm_motherName'),
+    phone1: val('adm_phone1'), phone2: val('adm_phone2'), classToJoin: val('adm_class'), prevSchool: val('adm_prevSchool'), address: val('adm_address')
+  };
+  const out = document.getElementById('admissionSuccess');
+  const fail = msg => { out.innerHTML = `<div class="alert alert-error" role="alert"><span class="alert-icon">!</span>${escapeHTML(msg)}</div>`; out.scrollIntoView({ block: 'center' }); };
 
-  // Validate every required field
-  if (!stuName || !dob || !fatherName || !motherName || !phone1 || !phone2 || !cls || !prevSchool || !address) {
-    if (successEl) successEl.innerHTML = `<div class="alert alert-error"><span class="alert-icon">!</span>Please fill all required fields before submitting.</div>`;
-    showToast('Please fill all required fields', 'error');
-    return;
+  if (!body.stuName || !body.dob || !body.fatherName || !body.motherName || !body.phone1 || !body.classToJoin || !body.address) {
+    fail('Please fill all required fields marked with *.'); return;
   }
-  // Phone digit validation
-  if (phone1.length !== 10 || !/^\d+$/.test(phone1)) {
-    if (successEl) successEl.innerHTML = `<div class="alert alert-error"><span class="alert-icon">!</span>Phone number 1 must be exactly 10 digits.</div>`;
-    return;
-  }
-  if (phone2.length !== 10 || !/^\d+$/.test(phone2)) {
-    if (successEl) successEl.innerHTML = `<div class="alert alert-error"><span class="alert-icon">!</span>Phone number 2 must be exactly 10 digits.</div>`;
-    return;
-  }
+  if (!/^\d{10}$/.test(body.phone1)) { fail('Phone number 1 must be exactly 10 digits.'); return; }
+  if (body.phone2 && !/^\d{10}$/.test(body.phone2)) { fail('Phone number 2 must be exactly 10 digits, or leave it empty.'); return; }
 
-  const admissions = DB.get('admissions') || [];
-  const date = new Date();
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-  const seq = String(admissions.length + 1).padStart(3, '0');
-  const ackNo = `ADM-${dateStr}-${seq}`;
+  const btn = document.getElementById('admissionSubmitBtn');
+  setBusy(btn, true, 'Submitting…');
+  const res = await api('/api/sync/public/admission', { method: 'POST', body });
+  setBusy(btn, false);
+  if (!res.success) { fail(res.message || 'Could not submit. Please call the school office.'); return; }
 
-  admissions.push({
-    id: ackNo,
-    stuName, dob,
-    fatherName, motherName,
-    phone1, phone2,
-    classToJoin: cls,
-    prevSchool, address,
-    submittedAt: date.toISOString(),
-    status: 'Pending',          // → 'Contacted' once admin marks it done
-    adminNotes: ''
-  });
-  DB.set('admissions', admissions);
-
-  // Clear the form
-  ['adm_stuName','adm_dob','adm_fatherName','adm_motherName','adm_phone1','adm_phone2','adm_prevSchool','adm_address']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const clsSel = document.getElementById('adm_class'); if (clsSel) clsSel.value = '';
-
-  // Inline success card
-  if (successEl) {
-    successEl.innerHTML = `<div class="alert alert-success"><span class="alert-icon">✓</span>
-      <div>
-        <strong>Admission request received for ${stuName}!</strong><br>
-        Your Acknowledgement Number is <strong>${ackNo}</strong>.<br>
-        Our admin will contact you very soon on <strong>${phone1}</strong>.
-      </div></div>`;
-    setTimeout(() => { if (successEl) successEl.innerHTML = ''; }, 12000);
-  }
-  // Loud popup so the parent definitely sees the confirmation
-  alert(`Admission request received for ${stuName}!\n\nAcknowledgement Number: ${ackNo}\n\nOur admin will contact you very soon on ${phone1}.`);
+  ['adm_stuName','adm_dob','adm_fatherName','adm_motherName','adm_phone1','adm_phone2','adm_class','adm_prevSchool','adm_address']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  out.innerHTML = `<div class="alert alert-success" role="status"><span class="alert-icon">✓</span><div>
+    <strong>Admission request received for ${escapeHTML(body.stuName)}.</strong><br>
+    Your acknowledgement number is <strong>${escapeHTML(res.id)}</strong>. Please keep it for reference.<br>
+    The school office will call you on <strong>${escapeHTML(body.phone1)}</strong>.</div></div>`;
+  out.scrollIntoView({ block: 'center' });
 }
 
 // === DOWNLOAD DATA ===
@@ -5877,11 +5444,13 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 // Enter key support for logins
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    if (document.getElementById('adminLoginModal')?.classList.contains('active')) doAdminLogin();
-    else if (document.getElementById('studentLoginModal')?.classList.contains('active')) doStudentLogin();
-    else if (document.getElementById('reAuthModal')?.classList.contains('active')) doReAuth();
-  }
+  if (e.key !== 'Enter') return;
+  const open = id => document.getElementById(id)?.classList.contains('active');
+  const press = id => { const b = document.getElementById(id); if (b && !b.disabled) b.click(); };
+  if (open('adminOtpModal')) press('adminOtpVerifyBtn');
+  else if (open('adminLoginModal')) press('adminLoginBtn');
+  else if (open('studentLoginModal')) press('studentLoginBtn');
+  else if (open('reAuthModal')) press('btnReAuthAction');
 });
 
 // =========================================
@@ -5954,14 +5523,14 @@ function renderPosterSlider() {
 
   section.classList.remove('hidden');
   track.innerHTML = posters.map(p =>
-    `<div class="poster-slide"><img src="${p.src}" alt="${p.title||'Poster'}"></div>`
+    `<div class="poster-slide"><img src="${p.src}" alt="${escapeHTML(p.title||'School announcement poster')}"></div>`
   ).join('');
 
-  // Show arrows + dots ONLY if more than one poster
+  // Arrows and dots only make sense with more than one poster.
   const multi = posters.length > 1;
-  if (prevBtn) prevBtn.style.display = multi ? '' : 'none';
-  if (nextBtn) nextBtn.style.display = multi ? '' : 'none';
-  dots.style.display = multi ? '' : 'none';
+  if (prevBtn) prevBtn.hidden = !multi;
+  if (nextBtn) nextBtn.hidden = !multi;
+  dots.hidden = !multi;
 
   dots.innerHTML = multi ? posters.map((_,i) =>
     `<button class="poster-dot ${i===0?'active':''}" onclick="posterGoTo(${i})" aria-label="Slide ${i+1}"></button>`
@@ -5969,10 +5538,26 @@ function renderPosterSlider() {
   posterIndex = 0;
   _updatePosterPosition();
 
-  // Auto-rotate every 5s if more than one poster
-  if (multi) {
-    posterAutoTimer = setInterval(posterNext, 5000);
+  bindSliderPause(section, () => posterAutoTimer, t => { posterAutoTimer = t; }, posterNext, multi);
+}
+
+// Auto-advance a slider every 5s, pausing while it is hovered or focused and
+// never moving for visitors who prefer reduced motion.
+function bindSliderPause(section, getTimer, setTimer, step, enabled) {
+  const start = () => {
+    if (getTimer()) clearInterval(getTimer());
+    setTimer(enabled && !prefersReducedMotion() ? setInterval(step, 5000) : null);
+  };
+  const stop = () => { if (getTimer()) clearInterval(getTimer()); setTimer(null); };
+  if (section && !section._sliderBound) {
+    section._sliderBound = true;
+    section.addEventListener('mouseenter', () => section._sliderStop());
+    section.addEventListener('mouseleave', () => section._sliderStart());
+    section.addEventListener('focusin', () => section._sliderStop());
+    section.addEventListener('focusout', () => section._sliderStart());
   }
+  if (section) { section._sliderStart = start; section._sliderStop = stop; }
+  start();
 }
 
 function _updatePosterPosition() {
@@ -6071,16 +5656,16 @@ function renderActivitySlider() {
   const recent = activities.slice(-8).reverse();
   track.innerHTML = recent.map(a => `
     <div class="activity-slide">
-      <img src="${a.src}" alt="${a.caption||''}">
-      <div class="activity-caption"><strong>${a.caption||''}</strong>${a.date?'<span style="opacity:0.85;font-size:0.82rem">'+fmtDate(a.date)+'</span>':''}</div>
+      <img src="${a.src}" alt="${escapeHTML(a.caption||'School activity photo')}" loading="lazy">
+      <div class="activity-caption"><strong>${escapeHTML(a.caption||'')}</strong>${a.date?'<span class="activity-date">'+fmtDate(a.date)+'</span>':''}</div>
     </div>
   `).join('');
 
-  // Hide arrows + dots when only one photo (per user request)
+  // Arrows and dots only make sense with more than one photo.
   const multi = recent.length > 1;
-  if (prevBtn) prevBtn.style.display = multi ? '' : 'none';
-  if (nextBtn) nextBtn.style.display = multi ? '' : 'none';
-  dots.style.display = multi ? '' : 'none';
+  if (prevBtn) prevBtn.hidden = !multi;
+  if (nextBtn) nextBtn.hidden = !multi;
+  dots.hidden = !multi;
 
   dots.innerHTML = multi ? recent.map((_,i) =>
     `<button class="poster-dot ${i===0?'active':''}" onclick="activityGoTo(${i})" aria-label="Activity ${i+1}"></button>`
@@ -6088,9 +5673,7 @@ function renderActivitySlider() {
   activityIndex = 0;
   _updateActivityPosition();
 
-  if (multi) {
-    activityAutoTimer = setInterval(activityNext, 5000);
-  }
+  bindSliderPause(section, () => activityAutoTimer, t => { activityAutoTimer = t; }, activityNext, multi);
 }
 
 function _updateActivityPosition() {
@@ -6176,23 +5759,22 @@ function renderAdminActivityGrid() {
 // --- GALLERY (Full photo gallery on home page) ---
 
 function renderGallery() {
-  // Renders the dedicated Gallery page (opened via hamburger menu).
   const grid = document.getElementById('galleryGrid');
   const emptyState = document.getElementById('galleryEmptyState');
   if (!grid) return;
   const photos = DB.get('gallery');
   if (!photos.length) {
     grid.innerHTML = '';
-    if (emptyState) emptyState.style.display = 'block';
+    if (emptyState) emptyState.hidden = false;
     return;
   }
-  if (emptyState) emptyState.style.display = 'none';
+  if (emptyState) emptyState.hidden = true;
   // Most recent first
   const sorted = photos.slice().reverse();
-  grid.innerHTML = sorted.map(p => `
-    <div class="gallery-item" onclick="openLightbox('${p.src}')">
-      <img src="${p.src}" alt="${p.event||''}" loading="lazy">
-      <div class="gallery-event-tag">${p.event||'Untitled'}</div>
+  grid.innerHTML = sorted.map((p, i) => `
+    <div class="gallery-item" role="button" tabindex="0" aria-label="View larger: ${escapeHTML(p.event||'Gallery photo')}" onclick="openLightbox(DB.get('gallery').slice().reverse()[${i}].src, this.querySelector('img').alt)">
+      <img src="${p.src}" alt="${escapeHTML(p.event ? 'Photo from ' + p.event : 'School gallery photo')}" loading="lazy">
+      <div class="gallery-event-tag">${escapeHTML(p.event||'Untitled')}</div>
     </div>
   `).join('');
 }
@@ -6454,16 +6036,16 @@ function renderFacultyPublic() {
   const list = DB.get('faculty') || [];
   if (!list.length) {
     grid.innerHTML = '';
-    if (empty) empty.style.display = '';
+    if (empty) empty.hidden = false;
     return;
   }
-  if (empty) empty.style.display = 'none';
+  if (empty) empty.hidden = true;
   grid.innerHTML = list.map(f => `
-    <div class="faculty-card" onclick="openFacultyDetail('${f.id}')">
+    <div class="faculty-card" role="button" tabindex="0" aria-label="More about ${escapeHTML(f.name)}" onclick="openFacultyDetail('${escapeHTML(f.id)}')">
       <div class="faculty-card-photo-wrap">
         ${f.photo
           ? `<img src="${f.photo}" alt="${escapeHTML(f.name)}">`
-          : '<div class="no-photo"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></span></div>'}
+          : '<div class="no-photo"><span class="emoji-icon-wrap"><svg class="emoji-svg" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></span></div>'}
       </div>
       <div class="faculty-card-body">
         <div class="faculty-card-name">${escapeHTML(f.name)}</div>
@@ -6486,10 +6068,10 @@ function openFacultyDetail(id) {
     <div class="fac-detail-photo">
       ${f.photo
         ? `<img src="${f.photo}" alt="${escapeHTML(f.name)}">`
-        : '<div class="no-photo"><span class="emoji-icon-wrap"><svg class="emoji-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></span></div>'}
+        : '<div class="no-photo"><span class="emoji-icon-wrap"><svg class="emoji-svg" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></span></div>'}
     </div>
     <div class="fac-detail-headline">
-      <div class="fac-detail-name">${escapeHTML(f.name)}</div>
+      <h2 class="fac-detail-name" id="facultyDetailName">${escapeHTML(f.name)}</h2>
       <div class="fac-detail-subject">${escapeHTML(f.subject)}</div>
     </div>
     <div class="fac-detail-meta-row">
@@ -6503,7 +6085,7 @@ function openFacultyDetail(id) {
       </div>
     </div>
     <div class="fac-detail-bio">
-      <h4>About</h4>
+      <h3>About</h3>
       ${f.bio
         ? `<p>${escapeHTML(f.bio).replace(/\n/g, '<br>')}</p>`
         : '<p class="no-bio">No additional details have been added yet.</p>'}
@@ -6526,77 +6108,15 @@ function closeFacultyDetail(e) {
 // =====================================================================
 // 35 places (alphabetical) shown above a road, with the school bus driving
 // across. Place names are listed without any "village" label as requested.
-const BUS_ROUTE_PLACES = [
-  'Agarmiyaguda', 'Akulamylaram', 'Annojiguda', 'Bachupally', 'Bairagiguda',
-  'Begarikancha', 'Begumpet', 'Chippalapally', 'Dabbedaguda', 'Dasarlapally',
-  'Dasarlapally Thanda', 'Davudguda Thanda', 'Dhannaram', 'Gudur', 'Gummadavelly',
-  'Jabbarguda', 'Jaithwaram Khalsa', 'Kandukur', 'Katikapally', 'Kolanguda',
-  'Kothaguda', 'Kothur', 'Lemoor', 'Madhapur', 'Meerkhanpet',
-  'Mucherla', 'Muralinagar', 'Nednoor', 'Peddamma Thanda', 'Pulimamidi',
-  'Rachulur', 'Saireddyguda', 'Saraswathiguda', 'Sarlaravualapally', 'Thimmapur'
-];
 
-function initBusRoute() {
-  const trackEl = document.getElementById('busStopsTrack');
-  const busEl = document.getElementById('busVehicle');
-  const sectionEl = document.querySelector('.bus-route-section');
-  const stageEl = document.querySelector('.bus-route-stage');
-  if (!trackEl || !busEl || !sectionEl || !stageEl) return;
-
-  // Render every place name as one stop marker. Boxes are laid out in a
-  // horizontal flex row inside #busStopsTrack — the CSS handles the actual
-  // animation. We do NOT need to position them absolutely; flexbox spaces
-  // them naturally.
-  trackEl.innerHTML = BUS_ROUTE_PLACES.map(name => `
-    <div class="bus-stop-marker">
-      <div class="bus-stop-box">${escapeHTML(name)}</div>
-      <div class="bus-stop-line"></div>
-      <div class="bus-stop-arrow"></div>
-    </div>
-  `).join('');
-
-  // Measure layout AFTER the browser has laid everything out. We need:
-  //   - track width (so the marquee knows how far to translate)
-  //   - stage width (so the bus knows how far to drive to reach the gate)
-  // requestAnimationFrame defers the read until after layout.
-  const measureAndApply = () => {
-    const trackWidth = trackEl.scrollWidth;
-    sectionEl.style.setProperty('--track-width', trackWidth + 'px');
-
-    // How far should the bus translate so its body ends up entering the
-    // arch gate? The arch is positioned at the right edge with a known
-    // width (~220px desktop, ~160px mobile). The bus is parked at left:24
-    // with width ~270px (desktop). We want the bus to drive forward
-    // enough that it visually reaches the centre of the arch.
-    // Target X = stageWidth - busWidth - archWidth/2 - parkLeft
-    const stageW = stageEl.clientWidth;
-    const busW = busEl.offsetWidth;
-    const archW = window.innerWidth < 700 ? 160 : 240;
-    const parkLeft = 24;
-    // Bus drives forward enough to enter the arch — target X positions
-    // the bus's centre roughly under the centre of the arch banner.
-    const target = Math.max(0, stageW - busW - parkLeft - archW * 0.5);
-    sectionEl.style.setProperty('--bus-arrive', target + 'px');
-
-    // Cycle duration: scaled to the number of stops so adding/removing
-    // places keeps a consistent reading speed (~1.6 seconds per stop).
-    const cycle = Math.max(40, BUS_ROUTE_PLACES.length * 1.6);
-    sectionEl.style.setProperty('--bus-cycle', cycle + 's');
-  };
-
-  requestAnimationFrame(measureAndApply);
-  // Recompute on resize so the arrival point stays accurate when the
-  // browser is resized between desktop and mobile widths.
-  window.addEventListener('resize', () => {
-    requestAnimationFrame(measureAndApply);
-  });
-}
 
 // --- LIGHTBOX (for gallery images) ---
-function openLightbox(src) {
+function openLightbox(src, alt) {
   const overlay = document.getElementById('lightboxOverlay');
   if (!overlay) return;
-  overlay.querySelector('img').src = src;
+  const img = overlay.querySelector('img');
+  img.src = src;
+  img.alt = alt || 'Enlarged gallery photo';
   overlay.classList.add('active');
 }
 function closeLightbox() {
@@ -7124,8 +6644,31 @@ function downloadGeneratedQR() {
   document.body.removeChild(link);
 }
 
-function startScanner() {
+// Heavy third-party libraries are only fetched when a portal feature needs them,
+// so public visitors never download them.
+const LIB_URLS = {
+  html5Qrcode: 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  razorpay: 'https://checkout.razorpay.com/v1/checkout.js'
+};
+const _scriptLoads = {};
+function loadScriptOnce(url) {
+  if (!_scriptLoads[url]) {
+    _scriptLoads[url] = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = url;
+      el.async = true;
+      el.onload = () => resolve();
+      el.onerror = () => { delete _scriptLoads[url]; reject(new Error('Failed to load ' + url)); };
+      document.head.appendChild(el);
+    });
+  }
+  return _scriptLoads[url];
+}
+
+async function startScanner() {
   document.getElementById('qrScannerStatus').textContent = 'Requesting camera access...';
+  try { await loadScriptOnce(LIB_URLS.html5Qrcode); }
+  catch (e) { document.getElementById('qrScannerStatus').textContent = 'Could not load the QR scanner. Check your internet connection and try again.'; return; }
   
   const initCamerasAndStart = () => {
     if (!html5QrCode) {
@@ -7274,7 +6817,8 @@ function changeCamera() {
 }
 
 function processScannedText(decodedText) {
-  const match = decodedText.match(/Student ID:\s*([A-Za-z0-9-]+)/i);
+  const urlMatch = decodedText.match(/public-scan\/([^/?#\s]+)/);
+  const match = urlMatch ? [null, decodeURIComponent(urlMatch[1])] : decodedText.match(/Student ID:\s*([A-Za-z0-9-]+)/i);
   let studentId = null;
   if (match) {
     studentId = match[1].trim();
@@ -7315,7 +6859,7 @@ function processScannedText(decodedText) {
             ${s.apaar ? `<tr style="border-bottom: 1px solid var(--border);"><th style="padding: 6px 0; color: var(--text-muted); font-weight: 500;">Apaar No</th><td style="padding: 6px 0;">${s.apaar}</td></tr>` : ''}
             <tr style="border-bottom: 1px solid var(--border);"><th style="padding: 6px 0; color: var(--text-muted); font-weight: 500;">Address</th><td style="padding: 6px 0; white-space: pre-wrap;">${s.address || '—'}</td></tr>
             <tr style="border-bottom: 1px solid var(--border);"><th style="padding: 6px 0; color: var(--text-muted); font-weight: 500;">Academic Year</th><td style="padding: 6px 0;">${s.academicYear || '—'}</td></tr>
-            <tr style="border-bottom: 1px solid var(--border);"><th style="padding: 6px 0; color: var(--text-muted); font-weight: 500;">Password</th><td style="padding: 6px 0; font-family: monospace;">${maskPassword(window.__vault.decodeStudentPassword(s.password))}</td></tr>
+            <tr style="border-bottom: 1px solid var(--border);"><th style="padding: 6px 0; color: var(--text-muted); font-weight: 500;">Password</th><td style="padding: 6px 0; font-family: monospace;">${maskPassword(StudentPassword.decode(s.password))}</td></tr>
           </table>
         </div>
       </div>
@@ -7378,11 +6922,13 @@ function handleQrFileUpload(event) {
   }
 }
 
-function processQrFile(file) {
+async function processQrFile(file) {
   if (!file.type.startsWith('image/')) {
     showToast('Please upload a valid image file containing a QR code.', 'error');
     return;
   }
+  try { await loadScriptOnce(LIB_URLS.html5Qrcode); }
+  catch (e) { showToast('Could not load the QR reader. Check your internet connection and try again.', 'error'); return; }
   
   showToast('Processing uploaded QR code image...', 'info');
   
@@ -7413,20 +6959,7 @@ function showStudentSuccessModal(s) {
     modal.classList.add('active');
   }
   
-  const plainPass = window.__vault.decodeStudentPassword(s.password);
-  const maskedPass = maskPassword(plainPass);
-  const qrText = `NOBLE HIGH SCHOOL STUDENT CARD
-==============================
-Student ID: ${s.id || s.loginId}
-Name: ${s.name || ''}
-Class: ${s.className || ''}-${s.section || ''}
-Roll No: ${s.rollNo || ''}
-Father's Name: ${s.fatherName || ''}
-Phone: ${s.phone || ''}
-Emergency Phone: ${s.emergencyPhone || ''}
-Address: ${s.address || ''}
-Academic Year: ${s.academicYear || ''}
-Password: ${maskedPass}`;
+  const qrText = `${BACKEND_URL}/api/students/public-scan/${encodeURIComponent(s.id || s.loginId)}`;
 
   setTimeout(() => {
     new QRCode(qrContainer, {
@@ -7518,14 +7051,6 @@ function escapeHTMLAttribute(str) {
 
 
 
-function escapeHTMLAttribute(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-}
 
 
 function printSingleStudent(studentId) {
@@ -7564,7 +7089,7 @@ function printAllStudentCards() {
 }
 
 function buildStudentPrintHTML(s) {
-  const plainPass = window.__vault ? window.__vault.decodeStudentPassword(s.password) : (s.password || '');
+  const plainPass = StudentPassword.decode(s.password);
   const maskedPass = maskPassword(plainPass);
   
   const name = s.name || '';
@@ -7580,18 +7105,7 @@ function buildStudentPrintHTML(s) {
   const address = s.address || '';
   const academicYear = s.academicYear || '';
   
-  const qrText = `NOBLE HIGH SCHOOL STUDENT CARD
-==============================
-Student ID: ${id}
-Name: ${name}
-Class: ${className}-${section}
-Roll No: ${rollNo}
-Father's Name: ${fatherName}
-Phone: ${phone}
-Emergency Phone: ${emergencyPhone}
-Address: ${address}
-Academic Year: ${academicYear}
-Password: ${maskedPass}`;
+  const qrText = `${BACKEND_URL}/api/students/public-scan/${encodeURIComponent(s.id || s.loginId)}`;
 
   const photoHtml = s.photo
     ? `<img src="${s.photo}" class="student-photo">`
@@ -7820,122 +7334,22 @@ function buildStudentBulkPrintHTML(studentsList) {
 // ============================================================================
 // === ANTIGRAVITY NEW CUSTOM FEATURES: CAPTCHA, SCANNER, AND PRINTING ===
 // ============================================================================
-let currentAdminCaptcha = '';
+let currentAdminCaptchaId = '';
 
-function regenerateAdminCaptcha() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let captchaText = '';
-  for (let i = 0; i < 6; i++) {
-    captchaText += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  currentAdminCaptcha = captchaText;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 180;
-  canvas.height = 50;
-  const ctx = canvas.getContext('2d');
-
-  // Fill background with random light color
-  ctx.fillStyle = "rgb(" + (210 + Math.random() * 30) + "," + (210 + Math.random() * 30) + "," + (210 + Math.random() * 30) + ")";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Draw background noise lines
-  for (let i = 0; i < 6; i++) {
-    ctx.strokeStyle = "rgb(" + (100 + Math.random() * 100) + "," + (100 + Math.random() * 100) + "," + (100 + Math.random() * 100) + ")";
-    ctx.lineWidth = 1 + Math.random() * 2;
-    ctx.beginPath();
-    ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.stroke();
-  }
-
-  // Draw background noise dots
-  for (let i = 0; i < 40; i++) {
-    ctx.fillStyle = "rgb(" + (100 + Math.random() * 100) + "," + (100 + Math.random() * 100) + "," + (100 + Math.random() * 100) + ")";
-    ctx.beginPath();
-    ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 1 + Math.random() * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Draw distorted characters
-  ctx.textBaseline = 'middle';
-  const fonts = ['Courier New', 'Georgia', 'Arial', 'Times New Roman', 'Verdana'];
-  
-  for (let i = 0; i < captchaText.length; i++) {
-    const char = captchaText[i];
-    const fontSize = 24 + Math.floor(Math.random() * 8);
-    const fontName = fonts[Math.floor(Math.random() * fonts.length)];
-    ctx.font = 'bold ' + fontSize + 'px ' + fontName;
-    ctx.fillStyle = "rgb(" + Math.floor(Math.random() * 80) + "," + Math.floor(Math.random() * 80) + "," + Math.floor(Math.random() * 80) + ")";
-
-    const x = 15 + i * 26 + Math.random() * 6;
-    const y = 25 + (Math.random() - 0.5) * 10;
-    const angle = (Math.random() - 0.5) * 0.4;
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.fillText(char, -10, 0);
-    ctx.restore();
-  }
-
-  // Add foreground noise lines across text
-  for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = "rgb(" + Math.floor(Math.random() * 100) + "," + Math.floor(Math.random() * 100) + "," + Math.floor(Math.random() * 100) + ")";
-    ctx.lineWidth = 1 + Math.random();
-    ctx.beginPath();
-    ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.stroke();
-  }
-
-  // Convert to image
-  try {
-    const dataUrl = canvas.toDataURL('image/png');
-    document.getElementById('adminCaptchaImg').src = dataUrl;
-  } catch (e) {
-    console.error('Failed to generate CAPTCHA image', e);
+async function regenerateAdminCaptcha() {
+  const img = document.getElementById('adminCaptchaImg');
+  const res = await api('/api/auth/captcha');
+  if (res.success) {
+    currentAdminCaptchaId = res.captchaId;
+    img.src = res.image;
+  } else {
+    currentAdminCaptchaId = '';
+    showAlert('adminLoginError', 'error', escapeHTML(res.message || 'Could not load the verification code.'));
   }
 }
 
 function decodeStudentPassword(encoded) {
-  if (!encoded) return '';
-  const map = {
-    'A':'7*k9P!mQ','B':'2#mQv&zL','C':'L5&tS9!w','D':'9!wX1@rZ','E':'b4@rZ*kN',
-    'F':'G8^nJ3$a','G':'0%hV6vB9','H':'kM3$YpC2','I':'1(pL9fS6','J':'qW2!f7*k',
-    'K':'5*dN8xM9','L':'rT0#xbL0','M':'jZ7@b4#b','N':'6&uK4rY2','O':'vB9%m1^j',
-    'P':'3$aC2vD3','Q':'fY1^gqW0','R':'xO5*k9%k','S':'nL8!h5*r','T':'4@sR0bP0',
-    'U':'iE6&w7&z','V':'zQ3#j1*v','W':'pD9%v0%m','X':'7*mN1fP9','Y':'uY4$t3!x',
-    'Z':'2!kX8uD6',
-    'a':'k8*P9!mQ','b':'v2#mQz&L','c':'sL5&t9!w','d':'r9!wX@rZ','e':'zb4@r*kN',
-    'f':'jG8^n3$a','g':'v0%hVvB9','h':'ykM3$pC2','i':'91(pLfS6','j':'fqW2!7*k',
-    'k':'85*dNxM9','l':'xrT0#bL0','m':'bjZ7@4#b','n':'26&uKrY2','o':'mvB9%1^j',
-    'p':'33$aCvD3','q':'gfY1^qW0','r':'kxO5*9%k','s':'hnL8!5*r','t':'04@sRbP0',
-    'u':'wiE6&7&z','v':'jzQ3#1*v','w':'vpD9%0%m','x':'17*mNfP9','y':'tuY4$3!x',
-    'z':'82!kXuD6',
-    '0':'wQ5&k7*b','1':'9*rP2pZ1','2':'bL0#v4#b','3':'7!mX49!z','4':'kZ8@nkM6',
-    '5':'1$jT33*t','6':'fS6^grY2','7':'xM9%h5^n','8':'pC2!wjP9','9':'uR5*y1(h',
-    ' ':'9!zL1vD3','@':'4#bV80)x','$':'kM6&p7!f','%':'3*tX0bK5','^':'rY2@sqW0',
-    '&':'5^nQ7mZ8','(':'1(hB41^j',')':'0)xM69%k','_':'7!fR94!h','=':'bK5*tbP0',
-    '[':'mZ8$p1*v',']':'xS2@l0%m','{':'1^jV4fP9','}':'9%kQ03!x','|':'4!hM77*b',
-    ':':'bP0#xpZ1',';':'7&zL94#b',"'":'qY2$w9!z','"':'kS5^nkM6',',':'1vR83t',
-    '.':'0%mQ3rY2','/':'fP9@k5^n','?':'3!xJ2jP9','<':'uD6&t1(h','!':'pZ1$wvD3',
-    '#':'aE7@m6&L','*':'b0)kS9rY','+':'cP3!nT8x','-':'dQ4#xJ2j','>':'eR5^vB9%',
-    '~':'fT6&w7&z','`':'gU7$tuY4','\\':'hV8@l0%m'
-  };
-  const rev = {};
-  for (const k in map) { rev[map[k]] = k; }
-  
-  let plain = '';
-  for (let i = 0; i < encoded.length; i += 8) {
-    const chunk = encoded.substring(i, i + 8);
-    if (rev[chunk]) {
-      plain += rev[chunk];
-    } else {
-      return encoded; // fallback
-    }
-  }
-  return plain;
+  return StudentPassword.decode(encoded);
 }
 
 function printSingleStudent(id) {

@@ -11,7 +11,7 @@ function reset() {
     loginId: "admin_noble",
     password: "$2a$10$OMr3CBU4Rdv7UOXGXSEJDuU17bz0xV6kj.XjecaZBwLR4O/BGc/ay",
     role: "admin",
-    email: "tankarisrilatha719@gmail.com",
+    email: process.env.EMAIL_USER || "",
     createdAt: new Date().toISOString()
   };
 

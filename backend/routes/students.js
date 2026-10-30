@@ -3,6 +3,7 @@ const router = express.Router();
 const Student = require('../models/Student');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const { readKey } = require('./sync');
 // @route   GET /api/students
 // @desc    Get all active students (or filter by class/search)
 // @access  Private (Admin Only)
@@ -145,17 +146,28 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
   }
 });
 // @route   GET /api/students/public-scan/:id
-// @desc    Public scan lookup for ID/QR verification
+// @desc    Target of the QR code printed on ID cards. Confirms the card is
+//          genuine and shows only what is printed on the card itself.
 // @access  Public
 router.get('/public-scan/:id', async (req, res) => {
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   try {
-    const student = await Student.findOne({ id: req.params.id });
-    if (!student) {
-      return res.status(404).json({ success: false, message: 'Student ID not registered or card invalid' });
-    }
-    res.json({ success: true, data: student });
+    const students = await readKey('students', []);
+    const s = students.find(x => x.id === req.params.id && x.status === 'active');
+    const body = s
+      ? `<h1>ID card verified</h1><p class="ok">This is a current student of Noble High School.</p>
+         <dl><dt>Name</dt><dd>${esc(s.name)}</dd><dt>Student ID</dt><dd>${esc(s.id)}</dd>
+         <dt>Class</dt><dd>${esc(s.className)} &ndash; ${esc(s.section)}</dd><dt>Academic year</dt><dd>${esc(s.academicYear)}</dd></dl>`
+      : `<h1>Card not recognised</h1><p class="bad">This ID is not registered as a current student. Please contact the school office: +91 98484 24618.</p>`;
+    res.status(s ? 200 : 404).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>ID Verification | Noble High School</title>
+<style>body{font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:0 16px;color:#1a2535}
+h1{color:#0f2447;font-size:1.4rem}.ok{color:#1a7a4a;font-weight:600}.bad{color:#c0321a;font-weight:600}
+dl{display:grid;grid-template-columns:auto 1fr;gap:8px 16px}dt{color:#5a6a82}dd{margin:0;font-weight:600}</style>
+</head><body><p><strong>Noble High School</strong>, Kandukur</p>${body}</body></html>`);
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).send('Verification is unavailable right now.');
   }
 });
 module.exports = router;
