@@ -19,18 +19,24 @@ const sessionToken = (payload) =>
 
 const maskEmail = (email) => String(email || '').replace(/(.{3})(.*)(@.*)/, '$1***$3');
 
-// Never print OTPs in production logs.
-function logDevOtp(label, otp) {
-  if (process.env.NODE_ENV !== 'production') console.log(`[DEV] ${label} OTP: ${otp}`);
-}
+// Passwords that were published in this project's source code. An admin who
+// still uses one must choose a new password before doing anything else.
+const PUBLISHED_PASSWORDS = ['noble2026password'];
 
+// Email the code. If email is not set up (or fails), write the code to the
+// server log instead, which only the site owner can read (Render > Logs).
+// Returns a sentence telling the user where to find the code.
 async function sendOtp(user, otp, label) {
-  logDevOtp(label, otp);
+  const to = user.email || process.env.EMAIL_USER;
+  let sent = false;
   try {
-    await sendOTPEmail(user.email || process.env.EMAIL_USER, otp);
+    sent = to ? await sendOTPEmail(to, otp) : false;
   } catch (err) {
     console.error('[EMAIL ERROR] Failed to send OTP email:', err.message);
   }
+  if (sent) return `A verification code has been sent to your registered email (${maskEmail(to)}).`;
+  console.log(`[LOGIN CODE] ${label} code for "${user.loginId}": ${otp} (valid for 5 minutes)`);
+  return 'Email is not set up yet, so the verification code was written to the server log. Open Render, go to Logs, and look for the line starting with [LOGIN CODE].';
 }
 
 // Limit attempts per IP (and per login ID when given) inside a time window.
@@ -110,13 +116,14 @@ router.post('/login', limitLogin, async (req, res) => {
     const otp = randomOtp();
     await ttlStore.set('otp', user.loginId, otp, FIVE_MIN);
     await ttlStore.set('otp-pending', user.loginId, '1', 3 * FIVE_MIN);
-    await sendOtp(user, otp, 'Admin login');
+    await ttlStore.set('must-change', user.loginId, PUBLISHED_PASSWORDS.includes(String(password)) ? '1' : '0', 3 * FIVE_MIN);
+    const where = await sendOtp(user, otp, 'Admin login');
 
     res.json({
       success: true,
       requireOTP: true,
       loginId: user.loginId,
-      message: `A verification code (OTP) has been sent to your registered email (${maskEmail(user.email || process.env.EMAIL_USER)}).`
+      message: where
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
@@ -133,8 +140,8 @@ router.post('/resend-otp', limitLogin, async (req, res) => {
     if (!user) return res.status(400).json({ success: false, message: 'Please log in again.' });
     const otp = randomOtp();
     await ttlStore.set('otp', loginId, otp, FIVE_MIN);
-    await sendOtp(user, otp, 'Admin login (resend)');
-    res.json({ success: true, message: 'A new verification code has been sent.' });
+    const where = await sendOtp(user, otp, 'Admin login (resend)');
+    res.json({ success: true, message: 'New code: ' + where });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Could not resend the code.' });
   }
@@ -162,8 +169,12 @@ router.post('/verify-otp', limitLogin, async (req, res) => {
     const user = await User.findOne({ loginId });
     if (!user || user.role !== 'admin') return res.status(404).json({ success: false, message: 'Admin user not found' });
 
-    const token = sessionToken({ id: String(user._id), role: 'admin', loginId: user.loginId });
-    res.json({ success: true, token, user: { loginId: user.loginId, role: 'admin' } });
+    const mustChange = (await ttlStore.get('must-change', loginId)) === '1';
+    await ttlStore.del('must-change', loginId);
+    const payload = { id: String(user._id), role: 'admin', loginId: user.loginId };
+    if (mustChange) payload.mustChange = true;
+    const token = sessionToken(payload);
+    res.json({ success: true, token, mustChangePassword: mustChange, user: { loginId: user.loginId, role: 'admin' } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Verification failed. Please try again.' });
   }
@@ -194,6 +205,30 @@ router.post('/student-login', limitLogin, async (req, res) => {
   }
 });
 
+// @route   PUT /api/auth/initial-password
+// @desc    Replace a published default password. Only works with the
+//          restricted session issued after logging in with that password.
+router.put('/initial-password', protect, async (req, res) => {
+  const newPassword = String((req.body && req.body.newPassword) || '');
+  try {
+    if (req.user.role !== 'admin' || !req.user.mustChange) {
+      return res.status(400).json({ success: false, message: 'No password change is pending.' });
+    }
+    const strong = newPassword.length >= 8 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /\d/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword);
+    if (!strong) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character.' });
+    if (PUBLISHED_PASSWORDS.includes(newPassword)) return res.status(400).json({ success: false, message: 'Please choose a different password.' });
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ success: false, message: 'Admin user not found' });
+    user.password = newPassword;
+    await user.save();
+    const token = sessionToken({ id: String(user._id), role: 'admin', loginId: user.loginId });
+    res.json({ success: true, token, message: 'Password updated.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Could not update the password.' });
+  }
+});
+
 // @route   GET /api/auth/me
 router.get('/me', protect, (req, res) => {
   res.json({ success: true, user: { loginId: req.user.loginId, role: req.user.role, studentId: req.user.studentId } });
@@ -210,8 +245,8 @@ router.post('/reauth/request', protect, authorize('admin'), limitLogin, async (r
 
     const otp = randomOtp();
     await ttlStore.set('reauth', user.loginId, otp, FIVE_MIN);
-    await sendOtp(user, otp, 'Re-authentication');
-    res.json({ success: true, message: `A verification code has been sent to ${maskEmail(user.email || process.env.EMAIL_USER)}.` });
+    const where = await sendOtp(user, otp, 'Re-authentication');
+    res.json({ success: true, message: where });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Could not send the verification code.' });
   }

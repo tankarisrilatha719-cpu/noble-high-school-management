@@ -6,9 +6,12 @@ const cors = require('cors');
 const compression = require('compression');
 const connectDB = require('./config/db');
 
+// Sessions are signed with JWT_SECRET. If it is missing or too short, use a
+// random secret for this run: everything works, but logins end whenever the
+// server restarts. Set JWT_SECRET to keep people logged in across restarts.
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-  console.error('[FATAL] JWT_SECRET must be set to a random string of at least 32 characters.');
-  process.exit(1);
+  process.env.JWT_SECRET = require('crypto').randomBytes(48).toString('hex');
+  console.warn('[SECURITY] JWT_SECRET is not set; using a temporary random secret for this run.');
 }
 
 const app = express();
@@ -121,7 +124,7 @@ connectDB().finally(() => {
 
 // Keep the free Render instance awake in production only.
 const https = require('https');
-if (process.env.NODE_ENV === 'production') setInterval(() => {
+if (process.env.NODE_ENV === 'production' || process.env.RENDER) setInterval(() => {
   https.get('https://noble-high-school.onrender.com/api', (res) => {
     console.log('[KEEP-ALIVE] Ping: ' + res.statusCode);
   }).on('error', (err) => {

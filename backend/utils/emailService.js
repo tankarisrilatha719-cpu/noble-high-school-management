@@ -62,7 +62,7 @@ const sendOTPEmail = async (toEmail, otp) => {
         req.write(emailData);
         req.end();
       });
-      return; // Successfully sent
+      return true; // Successfully sent
     } catch (resendError) {
       console.warn(`[Resend Warning] Failed to send via Resend: ${resendError.message}`);
       // Fall through to SMTP if SMTP is configured
@@ -107,18 +107,15 @@ const sendOTPEmail = async (toEmail, otp) => {
 
       const info = await transporter.sendMail(mailOptions);
       console.log(`OTP email sent successfully to ${toEmail} via SMTP. MessageID: ${info.messageId}`);
-      return info;
+      return true;
     } catch (smtpError) {
       console.warn(`[SMTP Warning] Failed to send via SMTP: ${smtpError.message}`);
     }
   }
 
-  // 3. Neither Resend nor SMTP delivered the email. In development the OTP is
-  // printed to the server console instead; in production this is an error.
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Email delivery is not configured');
-  }
-  console.log(`[DEV] Could not email the OTP to ${toEmail}; use the OTP printed above.`);
+  // 3. Neither Resend nor SMTP delivered the email. The caller decides what
+  // to do (it writes the code to the server log, which only the owner sees).
+  return false;
 };
 
 module.exports = { sendOTPEmail };

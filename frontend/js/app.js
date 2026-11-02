@@ -698,17 +698,66 @@ async function doAdminOtpVerify() {
     return;
   }
 
-  Session.set({ token: res.token, role: 'admin', loginId: res.user.loginId });
   clearInterval(adminOtpTimerInterval);
-  await loadDataFromBackend(false);
   setBusy(btn, false);
   closeModal('adminOtpModal');
   document.getElementById('adminUid').value = '';
   document.getElementById('adminPass').value = '';
   document.getElementById('adminOtpInput').value = '';
+
+  if (res.mustChangePassword) {
+    // The default password was used: the server only allows setting a new one.
+    pendingPasswordChange = { token: res.token, loginId: res.user.loginId };
+    document.getElementById('newPasswordInput').value = '';
+    document.getElementById('newPasswordConfirm').value = '';
+    document.getElementById('newPasswordError').innerHTML = '';
+    document.getElementById('newPasswordModal').classList.add('active');
+    return;
+  }
+  await finishAdminLogin(res.token, res.user.loginId);
+}
+
+let pendingPasswordChange = null;
+
+async function finishAdminLogin(token, loginId) {
+  Session.set({ token, role: 'admin', loginId });
+  await loadDataFromBackend(false);
   showPage('admin');
   showAdminSection('dashboard');
   showToast('Logged in successfully as admin.', 'success');
+}
+
+async function doSetInitialPassword() {
+  const pass = document.getElementById('newPasswordInput').value;
+  const confirm = document.getElementById('newPasswordConfirm').value;
+  const strong = pass.length >= 8 && /[A-Z]/.test(pass) && /[a-z]/.test(pass) && /\d/.test(pass) && /[^A-Za-z0-9]/.test(pass);
+  if (!strong) { showAlert('newPasswordError', 'error', 'Use at least 8 characters with an uppercase letter, a lowercase letter, a number and a symbol.'); return; }
+  if (pass !== confirm) { showAlert('newPasswordError', 'error', 'The two passwords do not match.'); return; }
+  if (!pendingPasswordChange) { closeModal('newPasswordModal'); showAdminLogin(); return; }
+
+  const btn = document.getElementById('newPasswordBtn');
+  setBusy(btn, true, 'Saving…');
+  let res;
+  try {
+    const r = await fetch(BACKEND_URL + '/api/auth/initial-password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + pendingPasswordChange.token },
+      body: JSON.stringify({ newPassword: pass })
+    });
+    res = await r.json();
+  } catch (e) {
+    res = { success: false, message: 'Cannot reach the school server. Please try again.' };
+  }
+  setBusy(btn, false);
+  if (!res.success) { showAlert('newPasswordError', 'error', escapeHTML(res.message || 'Could not save the password.')); return; }
+
+  const loginId = pendingPasswordChange.loginId;
+  pendingPasswordChange = null;
+  document.getElementById('newPasswordInput').value = '';
+  document.getElementById('newPasswordConfirm').value = '';
+  closeModal('newPasswordModal');
+  await finishAdminLogin(res.token, loginId);
+  showToast('Password changed. Use your new password next time.', 'success');
 }
 
 async function doAdminOtpResend() {
@@ -5447,7 +5496,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const open = id => document.getElementById(id)?.classList.contains('active');
   const press = id => { const b = document.getElementById(id); if (b && !b.disabled) b.click(); };
-  if (open('adminOtpModal')) press('adminOtpVerifyBtn');
+  if (open('newPasswordModal')) press('newPasswordBtn');
+  else if (open('adminOtpModal')) press('adminOtpVerifyBtn');
   else if (open('adminLoginModal')) press('adminLoginBtn');
   else if (open('studentLoginModal')) press('studentLoginBtn');
   else if (open('reAuthModal')) press('btnReAuthAction');

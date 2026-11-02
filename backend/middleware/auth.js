@@ -12,6 +12,9 @@ async function resolveUser(token) {
   }
   const user = await User.findById(decoded.id).select('-password');
   if (!user || user.role !== 'admin') return null;
+  // Sessions from a login with a published default password may only set a
+  // new password (PUT /api/auth/initial-password).
+  if (decoded.mustChange) user.mustChange = true;
   return user;
 }
 
@@ -31,6 +34,9 @@ const protect = async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'Not authorized, user not found' });
     }
+    if (req.user.mustChange && req.originalUrl.split('?')[0] !== '/api/auth/initial-password') {
+      return res.status(403).json({ success: false, mustChangePassword: true, message: 'Please set a new password first.' });
+    }
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Session expired. Please log in again.' });
@@ -42,6 +48,7 @@ const optionalAuth = async (req, res, next) => {
   const token = readBearer(req);
   if (token) {
     try { req.user = await resolveUser(token); } catch (e) { req.user = null; }
+    if (req.user && req.user.mustChange) req.user = null;
   }
   next();
 };

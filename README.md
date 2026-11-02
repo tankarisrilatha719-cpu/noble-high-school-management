@@ -82,9 +82,8 @@ noble-school-refactored/
    ```bash
    npm install
    ```
-3. Copy `.env.example` to `.env` and fill it in. `JWT_SECRET` is required
-   (at least 32 random characters); the server will not start without it.
-   Generate one with:
+3. Copy `.env.example` to `.env` and fill it in. Set `JWT_SECRET` to a long
+   random value so logins survive server restarts:
    ```bash
    node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
    ```
@@ -102,11 +101,17 @@ noble-school-refactored/
 ---
 
 ### Production settings (Render)
-Set these as environment variables on the hosting service, not in a file:
-`NODE_ENV=production`, `MONGODB_URI`, `JWT_SECRET`, and either `RESEND_API_KEY`
-or `EMAIL_USER` + `EMAIL_APP_PASSWORD` (admin login sends a one-time code by
-email and fails if email is not configured). Online fee payment is enabled
-only when `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are set.
+Set these under **Environment** on Render, never in a committed file:
+* `MONGODB_URI` (required): the MongoDB Atlas connection string.
+* `JWT_SECRET` (recommended): without it the server makes a temporary one,
+  so everyone is logged out whenever Render restarts the service.
+* `RESEND_API_KEY`, or `EMAIL_USER` + `EMAIL_APP_PASSWORD` (recommended):
+  admin login codes are emailed. Without email, the code is written to the
+  Render **Logs** page as a line starting with `[LOGIN CODE]`.
+* `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (optional): turn on online fee payment.
+
+The first admin login with the old default password forces a new password
+before anything else can be done.
 
 ### How access works
 * Visitors can read only public content (posters, gallery, activities, faculty)
