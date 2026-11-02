@@ -75,7 +75,7 @@ const BACKEND_URL = localStorage.getItem('nhs_custom_backend_url') ||
     ? (window.location.port === '5000' ? window.location.origin : 'http://localhost:5000')
     : ((window.location.protocol === 'file:' || !window.location.hostname || (window.location.origin && window.location.origin.startsWith('file://')) || window.location.origin === 'null')
       ? 'http://localhost:5000'
-      : 'https://noble-high-school-management.onrender.com'));
+      : 'https://noble-high-school.onrender.com'));
 
 window._syncing = false;
 

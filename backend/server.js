@@ -18,7 +18,7 @@ app.disable('x-powered-by');
 
 // Only our own site may call the API from a browser. Extra origins can be
 // allowed with ALLOWED_ORIGINS=https://a.example,https://b.example
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://noble-high-school-management.onrender.com')
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://noble-high-school.onrender.com')
   .split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
   origin(origin, cb) {
@@ -122,7 +122,7 @@ connectDB().finally(() => {
 // Keep the free Render instance awake in production only.
 const https = require('https');
 if (process.env.NODE_ENV === 'production') setInterval(() => {
-  https.get('https://noble-high-school-management.onrender.com/api', (res) => {
+  https.get('https://noble-high-school.onrender.com/api', (res) => {
     console.log('[KEEP-ALIVE] Ping: ' + res.statusCode);
   }).on('error', (err) => {
     console.log('[KEEP-ALIVE] Error: ' + err.message);
